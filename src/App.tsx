@@ -3,11 +3,25 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/contexts/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
-import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import POS from "./pages/POS";
-import ComingSoon from "./pages/ComingSoon";
+import Inventory from "./pages/Inventory";
+import Purchases from "./pages/Purchases";
+import Customers from "./pages/Customers";
+import Suppliers from "./pages/Suppliers";
+import Accounting from "./pages/Accounting";
+import Reports from "./pages/Reports";
+import Invoices from "./pages/Invoices";
+import Branches from "./pages/Branches";
+import Devices from "./pages/Devices";
+import Payments from "./pages/Payments";
+import WhatsApp from "./pages/WhatsApp";
+import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -18,26 +32,30 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route element={<Layout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/pos" element={<POS />} />
-            <Route path="/inventory" element={<ComingSoon />} />
-            <Route path="/purchases" element={<ComingSoon />} />
-            <Route path="/customers" element={<ComingSoon />} />
-            <Route path="/suppliers" element={<ComingSoon />} />
-            <Route path="/accounting" element={<ComingSoon />} />
-            <Route path="/reports" element={<ComingSoon />} />
-            <Route path="/invoices" element={<ComingSoon />} />
-            <Route path="/branches" element={<ComingSoon />} />
-            <Route path="/devices" element={<ComingSoon />} />
-            <Route path="/payments" element={<ComingSoon />} />
-            <Route path="/whatsapp" element={<ComingSoon />} />
-            <Route path="/settings" element={<ComingSoon />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/pos" element={<POS />} />
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/purchases" element={<Purchases />} />
+              <Route path="/customers" element={<Customers />} />
+              <Route path="/suppliers" element={<Suppliers />} />
+              <Route path="/accounting" element={<Accounting />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/invoices" element={<Invoices />} />
+              <Route path="/branches" element={<Branches />} />
+              <Route path="/devices" element={<Devices />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/whatsapp" element={<WhatsApp />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
