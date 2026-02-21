@@ -34,7 +34,18 @@ export default function Onboarding() {
         .single();
       if (tErr) throw tErr;
 
-      // Create branch
+      // Update profile with tenant_id first (so RLS policies work)
+      await supabase
+        .from("profiles")
+        .update({ tenant_id: tenant.id })
+        .eq("user_id", user.id);
+
+      // Assign admin role
+      await supabase
+        .from("user_roles")
+        .insert({ user_id: user.id, role: "admin" as any });
+
+      // Now create branch (RLS can resolve tenant_id from profile)
       const { data: branch, error: bErr } = await supabase
         .from("branches")
         .insert({ tenant_id: tenant.id, name: branchName })
@@ -42,16 +53,11 @@ export default function Onboarding() {
         .single();
       if (bErr) throw bErr;
 
-      // Update profile with tenant & branch
+      // Update profile with branch_id
       await supabase
         .from("profiles")
-        .update({ tenant_id: tenant.id, branch_id: branch.id })
+        .update({ branch_id: branch.id })
         .eq("user_id", user.id);
-
-      // Assign admin role
-      await supabase
-        .from("user_roles")
-        .insert({ user_id: user.id, role: "admin" as any });
 
       await refreshProfile();
       toast.success("Business created successfully!");
