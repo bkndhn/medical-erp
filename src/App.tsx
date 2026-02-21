@@ -22,6 +22,8 @@ import Devices from "./pages/Devices";
 import Payments from "./pages/Payments";
 import WhatsApp from "./pages/WhatsApp";
 import Settings from "./pages/Settings";
+import SuperAdmin from "./pages/SuperAdmin";
+import UserManagement from "./pages/UserManagement";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -52,6 +54,8 @@ const App = () => (
               <Route path="/payments" element={<Payments />} />
               <Route path="/whatsapp" element={<WhatsApp />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/super-admin" element={<SuperAdmin />} />
+              <Route path="/users" element={<UserManagement />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -20,8 +20,8 @@ export default function Invoices() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-6 py-4">
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><FileText className="h-6 w-6 text-primary" /> Invoices</h1>
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
+        <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2 ml-10 md:ml-0"><FileText className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Invoices</h1>
         <p className="text-sm text-muted-foreground">{sales.length} invoices</p>
         <div className="mt-3 relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

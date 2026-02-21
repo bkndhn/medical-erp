@@ -21,12 +21,22 @@ interface AuthContextType {
   tenantId: string | null;
   branchId: string | null;
   loading: boolean;
+  tenantActive: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   hasRole: (role: string) => boolean;
   refreshProfile: () => Promise<void>;
+  getPageAccess: () => string[];
 }
+
+const PAGE_PERMISSIONS: Record<string, string[]> = {
+  super_admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "super-admin"],
+  admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users"],
+  manager: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "payments"],
+  cashier: ["dashboard", "pos", "customers", "invoices"],
+  staff: ["dashboard", "inventory"],
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -36,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tenantActive, setTenantActive] = useState(true);
 
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
@@ -44,6 +55,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq("user_id", userId)
       .single();
     setProfile(data);
+    
+    // Check if tenant is active
+    if (data?.tenant_id) {
+      const { data: tenant } = await supabase
+        .from("tenants")
+        .select("is_active")
+        .eq("id", data.tenant_id)
+        .single();
+      const active = tenant?.is_active ?? true;
+      setTenantActive(active);
+      
+      // Force logout if tenant is paused or user is deactivated
+      if (!active || !data.is_active) {
+        await supabase.auth.signOut();
+        return null;
+      }
+    }
     return data;
   };
 
@@ -121,6 +149,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasRole = (role: string) => roles.includes(role);
 
+  const getPageAccess = (): string[] => {
+    const allPages = new Set<string>();
+    for (const role of roles) {
+      const pages = PAGE_PERMISSIONS[role] || [];
+      pages.forEach(p => allPages.add(p));
+    }
+    // If no roles but has tenant, give basic access
+    if (allPages.size === 0 && profile?.tenant_id) {
+      return PAGE_PERMISSIONS.staff;
+    }
+    return Array.from(allPages);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -131,11 +172,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         tenantId: profile?.tenant_id ?? null,
         branchId: profile?.branch_id ?? null,
         loading,
+        tenantActive,
         signUp,
         signIn,
         signOut,
         hasRole,
         refreshProfile,
+        getPageAccess,
       }}
     >
       {children}

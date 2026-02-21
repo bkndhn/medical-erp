@@ -47,11 +47,11 @@ export default function Dashboard() {
 
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-6 py-4">
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Welcome, {profile?.full_name || "User"} • {new Date().toLocaleDateString()}</p>
+          <div className="ml-10 md:ml-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-foreground">Dashboard</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">Welcome, {profile?.full_name || "User"} • {new Date().toLocaleDateString()}</p>
           </div>
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
             <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Online
@@ -59,7 +59,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-6">
         {loading ? <div className="text-center text-muted-foreground py-12">Loading dashboard...</div> : <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {statCards.map((s, i) => (
@@ -83,17 +83,17 @@ export default function Dashboard() {
               {recentSales.length > 0 ? (
                 <table className="w-full text-sm">
                   <thead><tr className="border-b border-border/50">
-                    <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Invoice</th>
-                    <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Date</th>
-                    <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Payment</th>
+                  <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground">Invoice</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">Date</th>
+                    <th className="text-left py-2 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">Payment</th>
                     <th className="text-right py-2 px-3 text-xs font-medium text-muted-foreground">Amount</th>
                   </tr></thead>
                   <tbody>
                     {recentSales.map((s) => (
                       <tr key={s.invoice_number} className="border-b border-border/30 hover:bg-muted/30">
                         <td className="py-2.5 px-3 font-mono text-primary text-xs">{s.invoice_number}</td>
-                        <td className="py-2.5 px-3 text-muted-foreground text-xs">{new Date(s.created_at).toLocaleString()}</td>
-                        <td className="py-2.5 px-3"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{s.payment_mode}</span></td>
+                        <td className="py-2.5 px-3 text-muted-foreground text-xs hidden sm:table-cell">{new Date(s.created_at).toLocaleString()}</td>
+                        <td className="py-2.5 px-3 hidden sm:table-cell"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{s.payment_mode}</span></td>
                         <td className="py-2.5 px-3 text-right font-semibold text-foreground">₹{Number(s.grand_total).toFixed(0)}</td>
                       </tr>
                     ))}

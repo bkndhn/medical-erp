@@ -3,8 +3,8 @@ import { MessageSquare, Send, Settings } from "lucide-react";
 export default function WhatsApp() {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-6 py-4">
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><MessageSquare className="h-6 w-6 text-primary" /> WhatsApp Integration</h1>
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
+        <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2 ml-10 md:ml-0"><MessageSquare className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> WhatsApp Integration</h1>
         <p className="text-sm text-muted-foreground">Send invoices, reminders & reports via WhatsApp</p>
       </header>
       <div className="flex-1 flex items-center justify-center p-6">

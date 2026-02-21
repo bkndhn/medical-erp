@@ -33,10 +33,10 @@ export default function Settings() {
 
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-6 py-4">
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><SettingsIcon className="h-6 w-6 text-primary" /> Settings</h1>
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
+        <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2 ml-10 md:ml-0"><SettingsIcon className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Settings</h1>
       </header>
-      <div className="p-6 space-y-6 max-w-2xl">
+      <div className="p-4 sm:p-6 space-y-6 max-w-2xl">
         <div className="glass-card rounded-xl p-5 space-y-4">
           <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><User className="h-4 w-4 text-primary" /> Profile</h3>
           <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Email</label><input type="email" value={user?.email || ""} disabled className="w-full px-3 py-2 rounded-lg bg-muted/50 border border-border text-sm text-muted-foreground" /></div>
