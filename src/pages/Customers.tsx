@@ -57,10 +57,10 @@ export default function Customers() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-6 py-4">
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><Users className="h-6 w-6 text-primary" /> Customers</h1>
+          <div className="ml-10 md:ml-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Users className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Customers</h1>
             <p className="text-sm text-muted-foreground">{items.length} customers</p>
           </div>
           <button onClick={() => { setEditItem({ name: "", phone: "", email: "", address: "", gst_number: "", credit_limit: 0, outstanding: 0 }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">

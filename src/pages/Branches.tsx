@@ -46,13 +46,13 @@ export default function Branches() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div><h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><Building2 className="h-6 w-6 text-primary" /> Branches</h1><p className="text-sm text-muted-foreground">{branches.length} branches</p></div>
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="ml-10 md:ml-0"><h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Building2 className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Branches</h1><p className="text-sm text-muted-foreground">{branches.length} branches</p></div>
           <button onClick={() => { setForm({ name: "", code: "", address: "", phone: "", email: "", gst_number: "" }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"><Plus className="h-4 w-4" /> Add Branch</button>
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6">
         {loading ? <div className="text-center text-muted-foreground py-12">Loading...</div> :
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {branches.map(b => (

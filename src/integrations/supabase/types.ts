@@ -983,6 +983,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_tenant_active: { Args: never; Returns: boolean }
     }
     Enums: {
       app_role: "super_admin" | "admin" | "manager" | "cashier" | "staff"

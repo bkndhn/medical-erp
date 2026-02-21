@@ -121,11 +121,11 @@ export default function Inventory() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-6 py-4">
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Package className="h-6 w-6 text-primary" /> Inventory
+          <div className="ml-10 md:ml-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2">
+              <Package className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Inventory
             </h1>
             <p className="text-sm text-muted-foreground">{items.length} products • {lowStockCount} low stock</p>
           </div>
@@ -154,7 +154,7 @@ export default function Inventory() {
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
+      <div className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6">
         {loading ? (
           <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>
         ) : filtered.length === 0 ? (
@@ -169,13 +169,13 @@ export default function Inventory() {
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Name</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">SKU</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Barcode</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">SKU</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Barcode</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Price</th>
-                  <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">MRP</th>
+                  <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">MRP</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Stock</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Unit</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Expiry</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Unit</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden xl:table-cell">Expiry</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -183,17 +183,17 @@ export default function Inventory() {
                 {filtered.map((item) => (
                   <tr key={item.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
                     <td className="py-3 px-3 font-medium text-foreground">{item.name}</td>
-                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{item.sku || "—"}</td>
-                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{item.barcode || "—"}</td>
+                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs hidden sm:table-cell">{item.sku || "—"}</td>
+                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs hidden lg:table-cell">{item.barcode || "—"}</td>
                     <td className="py-3 px-3 text-right text-foreground">₹{Number(item.price).toFixed(2)}</td>
-                    <td className="py-3 px-3 text-right text-muted-foreground">₹{Number(item.mrp).toFixed(2)}</td>
+                    <td className="py-3 px-3 text-right text-muted-foreground hidden sm:table-cell">₹{Number(item.mrp).toFixed(2)}</td>
                     <td className="py-3 px-3 text-right">
                       <span className={`font-semibold ${Number(item.stock) <= (item.low_stock_threshold || 10) ? "text-accent" : "text-success"}`}>
                         {Number(item.stock)}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-muted-foreground">{item.unit}</td>
-                    <td className="py-3 px-3 text-muted-foreground text-xs">{item.expiry_date || "—"}</td>
+                    <td className="py-3 px-3 text-muted-foreground hidden lg:table-cell">{item.unit}</td>
+                    <td className="py-3 px-3 text-muted-foreground text-xs hidden xl:table-cell">{item.expiry_date || "—"}</td>
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => openEdit(item)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground">

@@ -151,7 +151,7 @@ export default function POS() {
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Top Bar */}
       <header className="flex items-center justify-between px-4 h-12 border-b border-border bg-card/50 backdrop-blur shrink-0">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 ml-10 md:ml-0">
           <h2 className="text-sm font-bold text-foreground">POS</h2>
           <span className="text-xs text-muted-foreground font-mono">{billNo}</span>
           <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-success/10 text-success border border-success/20">ACTIVE</span>
