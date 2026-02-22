@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Plus, Shield, Edit2, Trash2, X, Save, UserPlus } from "lucide-react";
+import { Users, Plus, Shield, Edit2, Trash2, X, Save, UserPlus, ToggleLeft, ToggleRight } from "lucide-react";
 import { toast } from "sonner";
 
 const ROLES = ["admin", "manager", "cashier", "staff"] as const;
@@ -14,8 +14,10 @@ const ROLE_COLORS: Record<string, string> = {
   staff: "bg-muted text-muted-foreground",
 };
 
-const PAGE_PERMISSIONS: Record<string, string[]> = {
-  admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users"],
+const ALL_PAGES = ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users"];
+
+const DEFAULT_PAGE_PERMISSIONS: Record<string, string[]> = {
+  admin: ALL_PAGES,
   manager: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "payments"],
   cashier: ["dashboard", "pos", "customers", "invoices"],
   staff: ["dashboard", "inventory"],
@@ -26,9 +28,11 @@ export default function UserManagement() {
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [pageAccessMap, setPageAccessMap] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [showInvite, setShowInvite] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
+  const [editAccess, setEditAccess] = useState<any>(null);
   const [inviteForm, setInviteForm] = useState({ email: "", password: "", fullName: "", role: "cashier" as string, branchId: "" });
   const [saving, setSaving] = useState(false);
 
@@ -37,10 +41,11 @@ export default function UserManagement() {
   const fetchData = async () => {
     if (!tenantId) return;
     setLoading(true);
-    const [{ data: profiles }, { data: userRoles }, { data: br }] = await Promise.all([
+    const [{ data: profiles }, { data: userRoles }, { data: br }, { data: pageAccess }] = await Promise.all([
       supabase.from("profiles").select("*").eq("tenant_id", tenantId),
       supabase.from("user_roles").select("*"),
       supabase.from("branches").select("id, name").eq("tenant_id", tenantId),
+      supabase.from("user_page_access").select("*").eq("tenant_id", tenantId),
     ]);
 
     const usersWithRoles = (profiles || []).map(p => ({
@@ -48,19 +53,28 @@ export default function UserManagement() {
       roles: (userRoles || []).filter(r => r.user_id === p.user_id).map(r => r.role),
     }));
 
+    const accessMap: Record<string, string[]> = {};
+    (pageAccess || []).forEach((pa: any) => { accessMap[pa.user_id] = pa.pages || []; });
+
     setUsers(usersWithRoles);
     setRoles(userRoles || []);
     setBranches(br || []);
+    setPageAccessMap(accessMap);
     setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, [tenantId]);
 
+  const getUserPages = (u: any): string[] => {
+    if (pageAccessMap[u.user_id]?.length > 0) return pageAccessMap[u.user_id];
+    const primaryRole = u.roles[0] || "staff";
+    return DEFAULT_PAGE_PERMISSIONS[primaryRole] || DEFAULT_PAGE_PERMISSIONS.staff;
+  };
+
   const handleInvite = async () => {
     if (!inviteForm.email || !inviteForm.password || !tenantId) return;
     setSaving(true);
     try {
-      // Create user via Supabase auth
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email: inviteForm.email,
         password: inviteForm.password,
@@ -69,17 +83,14 @@ export default function UserManagement() {
       if (authErr) throw authErr;
       if (!authData.user) throw new Error("User creation failed");
 
-      // Wait a moment for the trigger to create the profile
       await new Promise(r => setTimeout(r, 1000));
 
-      // Update profile with tenant and branch
       await supabase.from("profiles").update({
         tenant_id: tenantId,
         branch_id: inviteForm.branchId || null,
         full_name: inviteForm.fullName,
       }).eq("user_id", authData.user.id);
 
-      // Assign role
       await supabase.from("user_roles").insert({
         user_id: authData.user.id,
         role: inviteForm.role as any,
@@ -98,9 +109,7 @@ export default function UserManagement() {
 
   const updateRole = async (userId: string, newRole: string) => {
     try {
-      // Delete existing roles for user
       await supabase.from("user_roles").delete().eq("user_id", userId);
-      // Insert new role
       await supabase.from("user_roles").insert({ user_id: userId, role: newRole as any });
       toast.success("Role updated");
       setEditUser(null);
@@ -119,9 +128,34 @@ export default function UserManagement() {
   const removeUser = async (userId: string) => {
     if (!confirm("Remove this user from your business?")) return;
     await supabase.from("user_roles").delete().eq("user_id", userId);
+    await supabase.from("user_page_access").delete().eq("user_id", userId);
     await supabase.from("profiles").update({ tenant_id: null, branch_id: null }).eq("user_id", userId);
     toast.success("User removed");
     fetchData();
+  };
+
+  const savePageAccess = async (userId: string, pages: string[]) => {
+    try {
+      // Upsert page access
+      const existing = pageAccessMap[userId];
+      if (existing !== undefined) {
+        await supabase.from("user_page_access").update({ pages }).eq("user_id", userId).eq("tenant_id", tenantId!);
+      } else {
+        await supabase.from("user_page_access").insert({ user_id: userId, tenant_id: tenantId!, pages } as any);
+      }
+      toast.success("Page access updated");
+      setEditAccess(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const togglePage = (page: string) => {
+    if (!editAccess) return;
+    const current: string[] = editAccess.pages || [];
+    const updated = current.includes(page) ? current.filter(p => p !== page) : [...current, page];
+    setEditAccess({ ...editAccess, pages: updated });
   };
 
   if (!isAdmin) {
@@ -140,7 +174,7 @@ export default function UserManagement() {
     <div className="h-screen flex flex-col overflow-hidden">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
+          <div className="ml-10 md:ml-0">
             <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
               <Users className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Team Management
             </h1>
@@ -156,28 +190,10 @@ export default function UserManagement() {
         {loading ? (
           <div className="text-center text-muted-foreground py-12">Loading team...</div>
         ) : (
-          <>
-            {/* Role permissions reference */}
-            <div className="glass-card rounded-xl p-4 mb-6">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Page Access by Role</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {Object.entries(PAGE_PERMISSIONS).map(([role, pages]) => (
-                  <div key={role} className="p-3 rounded-lg bg-muted/30">
-                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium uppercase mb-2 ${ROLE_COLORS[role]}`}>{role}</span>
-                    <div className="flex flex-wrap gap-1">
-                      {pages.map(p => (
-                        <span key={p} className="px-1.5 py-0.5 rounded text-[9px] bg-muted text-muted-foreground capitalize">{p}</span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Users list */}
-            <div className="space-y-3">
-              {users.map(u => (
-                <div key={u.user_id} className={`glass-card rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 transition-all ${!u.is_active ? "opacity-50" : ""}`}>
+          <div className="space-y-3">
+            {users.map(u => (
+              <div key={u.user_id} className={`glass-card rounded-xl p-4 transition-all ${!u.is_active ? "opacity-50" : ""}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold shrink-0">
                       {(u.full_name || "U")[0].toUpperCase()}
@@ -199,8 +215,11 @@ export default function UserManagement() {
 
                   {u.user_id !== user?.id && (
                     <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => setEditUser(u)} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation">
+                      <button onClick={() => setEditUser(u)} title="Change role" className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation">
                         <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button onClick={() => setEditAccess({ userId: u.user_id, name: u.full_name, pages: getUserPages(u) })} title="Page access" className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-primary touch-manipulation">
+                        <ToggleRight className="h-3.5 w-3.5" />
                       </button>
                       <button onClick={() => toggleActive(u.user_id, u.is_active)} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation">
                         {u.is_active ? <Shield className="h-3.5 w-3.5" /> : <Shield className="h-3.5 w-3.5 text-success" />}
@@ -211,9 +230,16 @@ export default function UserManagement() {
                     </div>
                   )}
                 </div>
-              ))}
-            </div>
-          </>
+
+                {/* Show page access badges */}
+                <div className="flex flex-wrap gap-1 mt-2 pl-13">
+                  {getUserPages(u).map(p => (
+                    <span key={p} className="px-1.5 py-0.5 rounded text-[9px] bg-muted text-muted-foreground capitalize">{p}</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -278,6 +304,38 @@ export default function UserManagement() {
               ))}
             </div>
             <button onClick={() => setEditUser(null)} className="w-full mt-3 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium touch-manipulation">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Page Access Toggle Modal */}
+      {editAccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setEditAccess(null)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-md animate-fade-in max-h-[80vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-foreground mb-1">Page Access</h3>
+            <p className="text-sm text-muted-foreground mb-4">{editAccess.name}</p>
+
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => setEditAccess({ ...editAccess, pages: [...ALL_PAGES] })} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 touch-manipulation">Select All</button>
+              <button onClick={() => setEditAccess({ ...editAccess, pages: [] })} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:bg-muted/80 touch-manipulation">Clear All</button>
+            </div>
+
+            <div className="space-y-1">
+              {ALL_PAGES.map(page => {
+                const active = editAccess.pages.includes(page);
+                return (
+                  <button key={page} onClick={() => togglePage(page)} className={`w-full flex items-center justify-between py-3 px-3 rounded-lg text-sm transition-all touch-manipulation ${active ? "bg-primary/10 text-primary" : "bg-muted/30 text-muted-foreground"}`}>
+                    <span className="capitalize font-medium">{page}</span>
+                    {active ? <ToggleRight className="h-5 w-5 text-primary" /> : <ToggleLeft className="h-5 w-5" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setEditAccess(null)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium touch-manipulation">Cancel</button>
+              <button onClick={() => savePageAccess(editAccess.userId, editAccess.pages)} className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium touch-manipulation">Save Access</button>
+            </div>
           </div>
         </div>
       )}
