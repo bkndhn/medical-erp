@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Maximize } from "lucide-react";
+import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Maximize, X, ShoppingCart } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
@@ -8,12 +8,19 @@ import { toast } from "sonner";
 interface Item {
   id: string; name: string; sku: string | null; barcode: string | null;
   price: number; mrp: number; gst_rate: number | null; stock: number;
-  category_id: string | null; unit: string | null;
+  category_id: string | null; unit: string | null; is_weighable: boolean | null;
 }
 
 interface CartItem {
   item: Item; quantity: number; discount: number; total: number;
 }
+
+interface PaymentLine {
+  mode: string; amount: number;
+}
+
+const PAYMENT_MODES = ["cash", "upi", "card", "credit"] as const;
+const QUICK_QTYS = [1, 5, 10, 12, 20, 25, 50, 100];
 
 const shortcutMap = [
   { key: 'F1', action: 'Search Products', category: 'Billing' },
@@ -35,10 +42,14 @@ export default function POS() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [showPayment, setShowPayment] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'card'>('cash');
-  const [cashReceived, setCashReceived] = useState("");
+  const [showQtyEdit, setShowQtyEdit] = useState<string | null>(null);
+  const [qtyInput, setQtyInput] = useState("");
   const [billCount, setBillCount] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Split payment state
+  const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([{ mode: "cash", amount: 0 }]);
+  const [cashReceived, setCashReceived] = useState("");
 
   useEffect(() => {
     if (!tenantId) return;
@@ -86,26 +97,70 @@ export default function POS() {
     }));
   };
 
+  const setExactQty = (id: string, qty: number) => {
+    if (qty <= 0) return;
+    setCart(prev => prev.map(i => {
+      if (i.item.id !== id) return i;
+      return { ...i, quantity: qty, total: qty * Number(i.item.price) - i.discount };
+    }));
+    setShowQtyEdit(null);
+    setQtyInput("");
+  };
+
   const removeItem = (id: string) => setCart(prev => prev.filter(i => i.item.id !== id));
+  const clearCart = () => { setCart([]); toast.info("Cart cleared"); };
 
   const subtotal = cart.reduce((sum, i) => sum + i.total, 0);
   const gstTotal = cart.reduce((sum, i) => sum + (i.total * (Number(i.item.gst_rate) || 0) / 100), 0);
   const grandTotal = subtotal + gstTotal;
-  const change = cashReceived ? parseFloat(cashReceived) - grandTotal : 0;
+
+  const totalPaid = paymentLines.reduce((s, l) => s + l.amount, 0);
+  const remaining = grandTotal - totalPaid;
+
+  const addPaymentLine = () => {
+    setPaymentLines(prev => [...prev, { mode: "cash", amount: 0 }]);
+  };
+
+  const updatePaymentLine = (idx: number, field: keyof PaymentLine, value: any) => {
+    setPaymentLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l));
+  };
+
+  const removePaymentLine = (idx: number) => {
+    if (paymentLines.length <= 1) return;
+    setPaymentLines(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const fillRemaining = (idx: number) => {
+    const otherTotal = paymentLines.reduce((s, l, i) => i === idx ? s : s + l.amount, 0);
+    updatePaymentLine(idx, "amount", Math.max(0, grandTotal - otherTotal));
+  };
+
+  const openPayment = () => {
+    setPaymentLines([{ mode: "cash", amount: grandTotal }]);
+    setCashReceived("");
+    setShowPayment(true);
+  };
 
   const completeSale = async () => {
     if (!tenantId || cart.length === 0) return;
+    if (totalPaid < grandTotal - 0.01) {
+      toast.error(`Payment short by ₹${(grandTotal - totalPaid).toFixed(2)}`);
+      return;
+    }
     try {
+      const isSplit = paymentLines.length > 1;
+      const primaryMode = isSplit ? "split" : paymentLines[0].mode;
+      const cashLine = paymentLines.find(l => l.mode === "cash");
+      const changeAmount = cashLine ? Math.max(0, totalPaid - grandTotal) : 0;
+
       const { data: sale, error } = await supabase.from("sales").insert({
         tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
         invoice_number: billNo, subtotal, discount: 0, tax_total: gstTotal,
-        grand_total: grandTotal, payment_mode: paymentMode as any,
-        amount_paid: paymentMode === "cash" ? parseFloat(cashReceived) || grandTotal : grandTotal,
-        change_amount: Math.max(0, change), status: "completed" as any,
+        grand_total: grandTotal, payment_mode: primaryMode as any,
+        amount_paid: totalPaid, change_amount: changeAmount, status: "completed" as any,
       } as any).select().single();
       if (error) throw error;
 
-      // Insert sale items
       const saleItems = cart.map(i => ({
         sale_id: sale.id, item_id: i.item.id, item_name: i.item.name,
         quantity: i.quantity, unit_price: Number(i.item.price), discount: i.discount,
@@ -113,22 +168,23 @@ export default function POS() {
       }));
       await supabase.from("sale_items").insert(saleItems as any);
 
-      // Update stock
       for (const ci of cart) {
         await supabase.from("items").update({ stock: Number(ci.item.stock) - ci.quantity } as any).eq("id", ci.item.id);
       }
 
-      // Record payment
-      await supabase.from("payments").insert({
-        tenant_id: tenantId, branch_id: branchId, sale_id: sale.id,
-        amount: grandTotal, payment_mode: paymentMode as any,
-      } as any);
+      // Record each payment line separately
+      for (const line of paymentLines.filter(l => l.amount > 0)) {
+        await supabase.from("payments").insert({
+          tenant_id: tenantId, branch_id: branchId, sale_id: sale.id,
+          amount: line.amount, payment_mode: line.mode as any,
+        } as any);
+      }
 
-      toast.success(`Bill ${billNo} completed! ₹${grandTotal.toFixed(0)} via ${paymentMode.toUpperCase()}`);
+      const modeStr = isSplit ? paymentLines.filter(l => l.amount > 0).map(l => `₹${l.amount} ${l.mode.toUpperCase()}`).join(" + ") : primaryMode.toUpperCase();
+      toast.success(`Bill ${billNo} completed! ₹${grandTotal.toFixed(0)} via ${modeStr}`);
       setCart([]); setShowPayment(false); setCashReceived("");
       setBillCount(prev => prev + 1);
 
-      // Refresh items for updated stock
       const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
       setItems((it as unknown as Item[]) || []);
     } catch (err: any) {
@@ -139,7 +195,7 @@ export default function POS() {
   usePOSShortcuts({
     enabled: true,
     onSearch: () => searchRef.current?.focus(),
-    onPayment: () => cart.length > 0 && setShowPayment(true),
+    onPayment: () => cart.length > 0 && openPayment(),
     onHoldBill: () => toast.info("Bill held"),
     onRecallBill: () => toast.info("No held bills"),
     onReprint: () => toast.info("Reprinting last bill..."),
@@ -184,7 +240,7 @@ export default function POS() {
             ))}
           </div>
 
-          {/* Product Grid - responsive touch-optimized */}
+          {/* Product Grid */}
           <div className="flex-1 overflow-y-auto scrollbar-thin p-3">
             {filteredProducts.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -201,14 +257,17 @@ export default function POS() {
                       <span className="text-sm font-bold text-primary">₹{Number(item.price)}</span>
                       {Number(item.mrp) > Number(item.price) && <span className="text-[10px] text-muted-foreground line-through">₹{Number(item.mrp)}</span>}
                     </div>
-                    <span className="text-[10px] text-muted-foreground">Stock: {Number(item.stock)}</span>
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-[10px] text-muted-foreground">Stock: {Number(item.stock)}</span>
+                      {item.unit && <span className="text-[10px] text-muted-foreground">/{item.unit}</span>}
+                    </div>
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Shortcut Bar - hidden on mobile */}
+          {/* Shortcut Bar */}
           <div className="hidden md:flex items-center gap-3 px-3 py-2 border-t border-border bg-card/30 text-[10px] text-muted-foreground shrink-0">
             {[["F1","Search"],["F6","Hold"],["F9","Pay"],["F12","Complete"],["?","Help"]].map(([k,l]) => (
               <span key={k} className="flex items-center gap-1 whitespace-nowrap"><kbd className="kbd-shortcut">{k}</kbd>{l}</span>
@@ -221,13 +280,21 @@ export default function POS() {
           <div className="px-4 py-3 border-b border-border">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">Current Bill</h3>
-              <span className="text-xs text-muted-foreground">{cart.length} items</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{cart.length} items</span>
+                {cart.length > 0 && (
+                  <button onClick={clearCart} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 transition-all touch-manipulation">
+                    <Trash2 className="h-3 w-3" /> Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full py-8 text-muted-foreground">
+                <ShoppingCart className="h-8 w-8 mb-2 opacity-30" />
                 <p className="text-sm">No items yet</p>
                 <p className="text-xs">Scan or click to add</p>
               </div>
@@ -238,14 +305,25 @@ export default function POS() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{ci.item.name}</p>
-                        <p className="text-xs text-muted-foreground">₹{Number(ci.item.price)} × {ci.quantity} • GST {Number(ci.item.gst_rate) || 0}%</p>
+                        <p className="text-xs text-muted-foreground">₹{Number(ci.item.price)} × {ci.quantity}{ci.item.unit ? ` ${ci.item.unit}` : ""} • GST {Number(ci.item.gst_rate) || 0}%</p>
                       </div>
                       <p className="text-sm font-semibold text-foreground whitespace-nowrap">₹{ci.total.toFixed(0)}</p>
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       <button onClick={() => updateQty(ci.item.id, -1)} className="p-1.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-3 w-3" /></button>
-                      <span className="text-sm font-mono font-semibold text-foreground w-8 text-center">{ci.quantity}</span>
+                      <button
+                        onClick={() => { setShowQtyEdit(ci.item.id); setQtyInput(String(ci.quantity)); }}
+                        className="text-sm font-mono font-semibold text-foreground w-12 text-center py-1 rounded bg-muted/50 hover:bg-muted cursor-pointer touch-manipulation"
+                      >
+                        {ci.quantity}
+                      </button>
                       <button onClick={() => updateQty(ci.item.id, 1)} className="p-1.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Plus className="h-3 w-3" /></button>
+                      {/* Quick qty buttons for bulk billing */}
+                      <div className="flex gap-1 ml-1">
+                        {QUICK_QTYS.filter(q => q !== ci.quantity).slice(0, 3).map(q => (
+                          <button key={q} onClick={() => setExactQty(ci.item.id, q)} className="px-1.5 py-0.5 rounded text-[9px] bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary touch-manipulation">{q}</button>
+                        ))}
+                      </div>
                       <button onClick={() => removeItem(ci.item.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive ml-auto touch-manipulation"><Trash2 className="h-3 w-3" /></button>
                     </div>
                   </div>
@@ -261,11 +339,14 @@ export default function POS() {
             <div className="h-px bg-border" />
             <div className="flex justify-between text-lg font-bold"><span className="text-foreground">Total</span><span className="text-gradient-primary">₹{grandTotal.toFixed(2)}</span></div>
 
-            <div className="grid grid-cols-2 gap-2 pt-2">
+            <div className="grid grid-cols-3 gap-2 pt-2">
               <button onClick={() => { toast.info("Bill held"); setCart([]); }} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-muted text-muted-foreground hover:bg-muted/80 touch-manipulation">
                 <Pause className="h-3.5 w-3.5" /> Hold
               </button>
-              <button onClick={() => cart.length > 0 && setShowPayment(true)} disabled={cart.length === 0} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 touch-manipulation">
+              <button onClick={clearCart} disabled={cart.length === 0} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 disabled:opacity-40 touch-manipulation">
+                <X className="h-3.5 w-3.5" /> Clear
+              </button>
+              <button onClick={() => cart.length > 0 && openPayment()} disabled={cart.length === 0} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 touch-manipulation">
                 <CreditCard className="h-3.5 w-3.5" /> Pay
               </button>
             </div>
@@ -273,27 +354,65 @@ export default function POS() {
         </div>
       </div>
 
-      {/* Payment Modal */}
-      {showPayment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowPayment(false)}>
-          <div className="glass-card rounded-2xl p-6 w-full max-w-md mx-4 animate-fade-in" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-foreground mb-4">Payment</h3>
-            <p className="text-3xl font-bold text-gradient-primary text-center mb-6">₹{grandTotal.toFixed(2)}</p>
-            <div className="grid grid-cols-3 gap-2 mb-6">
-              {(["cash", "upi", "card"] as const).map(mode => (
-                <button key={mode} onClick={() => setPaymentMode(mode)} className={`py-3 rounded-lg text-sm font-medium transition-all touch-manipulation ${paymentMode === mode ? "bg-primary/15 text-primary border border-primary/40" : "bg-muted text-muted-foreground border border-transparent"}`}>{mode.toUpperCase()}</button>
+      {/* Qty Edit Modal */}
+      {showQtyEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowQtyEdit(null)}>
+          <div className="glass-card rounded-2xl p-5 w-full max-w-xs mx-4 animate-fade-in" onClick={e => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-foreground mb-3">Edit Quantity</h3>
+            <input type="number" value={qtyInput} onChange={e => setQtyInput(e.target.value)} autoFocus
+              onKeyDown={e => { if (e.key === "Enter") setExactQty(showQtyEdit, parseFloat(qtyInput) || 1); }}
+              className="w-full px-4 py-3 rounded-lg bg-muted border border-border text-foreground text-2xl font-mono text-center focus:outline-none focus:ring-2 focus:ring-primary/50" />
+            <div className="grid grid-cols-4 gap-2 mt-3">
+              {QUICK_QTYS.map(q => (
+                <button key={q} onClick={() => setExactQty(showQtyEdit, q)} className="py-2 rounded-lg text-sm font-medium bg-muted text-muted-foreground hover:bg-primary/10 hover:text-primary touch-manipulation">{q}</button>
               ))}
             </div>
-            {paymentMode === "cash" && (
-              <div className="mb-4">
-                <label className="text-xs text-muted-foreground mb-1 block">Cash Received</label>
-                <input type="number" value={cashReceived} onChange={e => setCashReceived(e.target.value)} placeholder="Enter amount..." className="w-full px-4 py-3 rounded-lg bg-muted border border-border text-foreground text-lg font-mono focus:outline-none focus:ring-2 focus:ring-primary/50" autoFocus />
-                {change > 0 && <p className="text-sm text-success mt-2 font-medium">Change: ₹{change.toFixed(2)}</p>}
-              </div>
-            )}
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => setShowQtyEdit(null)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium touch-manipulation">Cancel</button>
+              <button onClick={() => setExactQty(showQtyEdit, parseFloat(qtyInput) || 1)} className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium touch-manipulation">Set</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Split Payment Modal */}
+      {showPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowPayment(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 animate-fade-in max-h-[90vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-foreground mb-1">Payment</h3>
+            <p className="text-3xl font-bold text-gradient-primary text-center my-4">₹{grandTotal.toFixed(2)}</p>
+
+            <div className="space-y-3 mb-4">
+              {paymentLines.map((line, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <select value={line.mode} onChange={e => updatePaymentLine(idx, "mode", e.target.value)}
+                    className="px-2 py-2 rounded-lg bg-muted border border-border text-sm text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-24">
+                    {PAYMENT_MODES.map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+                  </select>
+                  <div className="flex-1 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                    <input type="number" value={line.amount || ""} onChange={e => updatePaymentLine(idx, "amount", parseFloat(e.target.value) || 0)}
+                      placeholder="0" className="w-full pl-7 pr-3 py-2 rounded-lg bg-muted border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                  <button onClick={() => fillRemaining(idx)} className="px-2 py-2 rounded-lg text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 whitespace-nowrap touch-manipulation">Fill</button>
+                  {paymentLines.length > 1 && (
+                    <button onClick={() => removePaymentLine(idx)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><X className="h-3.5 w-3.5" /></button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button onClick={addPaymentLine} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-border text-xs font-medium text-muted-foreground hover:text-primary hover:border-primary/40 transition-all touch-manipulation mb-4">
+              <Plus className="h-3.5 w-3.5" /> Add Payment Method
+            </button>
+
+            <div className="flex justify-between text-sm mb-1"><span className="text-muted-foreground">Total Paid</span><span className={`font-semibold ${totalPaid >= grandTotal ? "text-success" : "text-destructive"}`}>₹{totalPaid.toFixed(2)}</span></div>
+            {remaining > 0.01 && <div className="flex justify-between text-sm mb-4"><span className="text-muted-foreground">Remaining</span><span className="font-semibold text-destructive">₹{remaining.toFixed(2)}</span></div>}
+            {totalPaid > grandTotal + 0.01 && <div className="flex justify-between text-sm mb-4"><span className="text-muted-foreground">Change</span><span className="font-semibold text-success">₹{(totalPaid - grandTotal).toFixed(2)}</span></div>}
+
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => setShowPayment(false)} className="py-3 rounded-lg text-sm font-medium bg-muted text-muted-foreground touch-manipulation">Cancel</button>
-              <button onClick={completeSale} className="py-3 rounded-lg text-sm font-medium bg-success text-success-foreground hover:bg-success/90 touch-manipulation">Complete</button>
+              <button onClick={completeSale} disabled={totalPaid < grandTotal - 0.01} className="py-3 rounded-lg text-sm font-medium bg-success text-success-foreground hover:bg-success/90 disabled:opacity-40 touch-manipulation">Complete Sale</button>
             </div>
           </div>
         </div>

@@ -149,13 +149,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasRole = (role: string) => roles.includes(role);
 
+  const [customPages, setCustomPages] = useState<string[] | null>(null);
+
+  // Fetch custom page access when user changes
+  useEffect(() => {
+    if (user && profile?.tenant_id) {
+      supabase.from("user_page_access").select("pages").eq("user_id", user.id).eq("tenant_id", profile.tenant_id).maybeSingle()
+        .then(({ data }) => {
+          if (data && (data as any).pages?.length > 0) setCustomPages((data as any).pages);
+          else setCustomPages(null);
+        });
+    } else {
+      setCustomPages(null);
+    }
+  }, [user, profile?.tenant_id]);
+
   const getPageAccess = (): string[] => {
+    // Custom page access overrides role-based access
+    if (customPages && customPages.length > 0) return customPages;
     const allPages = new Set<string>();
     for (const role of roles) {
       const pages = PAGE_PERMISSIONS[role] || [];
       pages.forEach(p => allPages.add(p));
     }
-    // If no roles but has tenant, give basic access
     if (allPages.size === 0 && profile?.tenant_id) {
       return PAGE_PERMISSIONS.staff;
     }
