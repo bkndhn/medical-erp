@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText } from "lucide-react";
+import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
+import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
-const TABS = ["overview", "stock", "sales", "expiry"] as const;
+const TABS = ["overview", "stock", "sales", "expiry", "devices"] as const;
 type Tab = typeof TABS[number];
 
 export default function Reports() {
@@ -16,8 +17,11 @@ export default function Reports() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("overview");
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -29,26 +33,39 @@ export default function Reports() {
       supabase.from("expenses").select("*").eq("tenant_id", tenantId),
       supabase.from("suppliers").select("id, name").eq("tenant_id", tenantId),
       supabase.from("purchases").select("*, supplier_id").eq("tenant_id", tenantId),
-    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }]) => {
+      supabase.from("devices").select("*").eq("tenant_id", tenantId),
+    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }]) => {
       setSales((s as any) || []);
       setSaleItems((si as any) || []);
       setItems((i as any) || []);
       setExpenses((e as any) || []);
       setSuppliers((sup as any) || []);
       setPurchases((p as any) || []);
+      setDevices((dev as any) || []);
       setLoading(false);
     });
   }, [tenantId]);
 
-  const totalSales = sales.reduce((s, x) => s + Number(x.grand_total), 0);
+  // Date-filtered sales
+  const filteredSales = useMemo(() => {
+    if (!dateFrom) return sales;
+    return sales.filter(s => {
+      const d = new Date(s.created_at);
+      if (d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+      return true;
+    });
+  }, [sales, dateFrom, dateTo]);
+
+  const totalSales = filteredSales.reduce((s, x) => s + Number(x.grand_total), 0);
   const totalExpenses = expenses.reduce((s, x) => s + Number(x.amount), 0);
 
   // Payment breakdown
   const paymentData = useMemo(() => {
     const breakdown: Record<string, number> = {};
-    sales.forEach(s => { breakdown[s.payment_mode] = (breakdown[s.payment_mode] || 0) + Number(s.grand_total); });
+    filteredSales.forEach(s => { breakdown[s.payment_mode] = (breakdown[s.payment_mode] || 0) + Number(s.grand_total); });
     return Object.entries(breakdown).map(([name, value]) => ({ name, value }));
-  }, [sales]);
+  }, [filteredSales]);
 
   // Stock reports
   const lowStockItems = useMemo(() => items.filter(i => Number(i.stock) <= (i.low_stock_threshold || 10)).sort((a, b) => Number(a.stock) - Number(b.stock)), [items]);
@@ -112,6 +129,45 @@ export default function Reports() {
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [purchases, supplierMap]);
 
+  // Device wise sales
+  const deviceWiseSales = useMemo(() => {
+    const deviceMap = Object.fromEntries(devices.map(d => [d.id, d.name]));
+    const map: Record<string, { name: string; count: number; total: number }> = {};
+    filteredSales.forEach(s => {
+      const name = s.device_id ? (deviceMap[s.device_id] || "Unknown Device") : "No Device";
+      if (!map[name]) map[name] = { name, count: 0, total: 0 };
+      map[name].count++;
+      map[name].total += Number(s.grand_total);
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [filteredSales, devices]);
+
+  const handleExportExcel = () => {
+    if (tab === "sales") {
+      exportToExcel(itemWiseSales.map(s => ({ Item: s.name, Qty: s.qty, Revenue: s.revenue.toFixed(2) })), "sales-report");
+    } else if (tab === "stock") {
+      exportToExcel(items.map(i => ({ Name: i.name, Stock: Number(i.stock), Price: Number(i.price), Unit: i.unit || "pcs", Manufacturer: i.manufacturer || "" })), "stock-report");
+    } else if (tab === "expiry") {
+      exportToExcel(expiryItems.map(i => ({ Name: i.name, Batch: i.batch_number || "", Expiry: i.expiry_date, DaysLeft: i.daysLeft, Stock: Number(i.stock) })), "expiry-report");
+    } else if (tab === "devices") {
+      exportToExcel(deviceWiseSales.map(d => ({ Device: d.name, Orders: d.count, Total: d.total.toFixed(2) })), "device-sales");
+    } else {
+      exportToExcel(filteredSales.map(s => ({ Invoice: s.invoice_number, Date: new Date(s.created_at).toLocaleDateString(), Payment: s.payment_mode, Amount: Number(s.grand_total).toFixed(2) })), "overview-report");
+    }
+  };
+
+  const handleExportPDF = () => {
+    if (tab === "sales") {
+      exportToPDF("Sales Report", ["Item", "Qty", "Revenue"], itemWiseSales.map(s => [s.name, String(s.qty), `₹${s.revenue.toFixed(0)}`]));
+    } else if (tab === "stock") {
+      exportToPDF("Stock Report", ["Name", "Stock", "Price", "Unit"], items.map(i => [i.name, String(Number(i.stock)), `₹${Number(i.price)}`, i.unit || "pcs"]));
+    } else if (tab === "expiry") {
+      exportToPDF("Expiry Report", ["Name", "Batch", "Expiry", "Days Left", "Stock"], expiryItems.map(i => [i.name, i.batch_number || "—", i.expiry_date, i.expired ? "EXPIRED" : `${i.daysLeft}d`, String(Number(i.stock))]));
+    } else {
+      exportToPDF("Overview Report", ["Invoice", "Date", "Payment", "Amount"], filteredSales.map(s => [s.invoice_number, new Date(s.created_at).toLocaleDateString(), s.payment_mode, `₹${Number(s.grand_total).toFixed(0)}`]));
+    }
+  };
+
   const tooltipStyle = { backgroundColor: 'hsl(222 44% 10%)', border: '1px solid hsl(215 25% 18%)', borderRadius: '8px', color: 'hsl(210 40% 96%)' };
 
   return (
@@ -121,9 +177,12 @@ export default function Reports() {
         <div className="flex gap-1.5 mt-3 overflow-x-auto scrollbar-thin">
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all capitalize touch-manipulation ${tab === t ? "bg-primary/15 text-primary border border-primary/30" : "bg-muted text-muted-foreground border border-transparent"}`}>
-              {t === "overview" && "📊 "}{t === "stock" && "📦 "}{t === "sales" && "💰 "}{t === "expiry" && "📅 "}{t}
+              {t === "overview" && "📊 "}{t === "stock" && "📦 "}{t === "sales" && "💰 "}{t === "expiry" && "📅 "}{t === "devices" && "🖥️ "}{t}
             </button>
           ))}
+        </div>
+        <div className="mt-3">
+          <DateFilterExport onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }} onExportExcel={handleExportExcel} onExportPDF={handleExportPDF} defaultPreset="today" />
         </div>
       </header>
 
@@ -133,7 +192,7 @@ export default function Reports() {
           {/* Overview Tab */}
           {tab === "overview" && <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Sales</p><p className="text-2xl font-bold text-foreground mt-1">₹{totalSales.toLocaleString()}</p><p className="text-xs text-success">{sales.length} orders</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Sales</p><p className="text-2xl font-bold text-foreground mt-1">₹{totalSales.toLocaleString()}</p><p className="text-xs text-success">{filteredSales.length} orders</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Expenses</p><p className="text-2xl font-bold text-foreground mt-1">₹{totalExpenses.toLocaleString()}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Net Profit</p><p className={`text-2xl font-bold mt-1 ${totalSales - totalExpenses >= 0 ? "text-success" : "text-destructive"}`}>₹{(totalSales - totalExpenses).toLocaleString()}</p></div>
             </div>
@@ -287,6 +346,29 @@ export default function Reports() {
                 </table>
               </div>
               {expiryItems.length === 0 && <p className="text-muted-foreground text-center py-8">No items with expiry dates</p>}
+            </div>
+          </>}
+
+          {/* Devices Tab */}
+          {tab === "devices" && <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Devices</p><p className="text-2xl font-bold text-foreground mt-1">{devices.length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Active Devices</p><p className="text-2xl font-bold text-success mt-1">{devices.filter(d => d.status === "active").length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Device Sales</p><p className="text-2xl font-bold text-primary mt-1">₹{deviceWiseSales.reduce((s, d) => s + d.total, 0).toLocaleString()}</p></div>
+            </div>
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Monitor className="h-4 w-4 text-primary" /> Device-wise Sales</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-border"><th className="text-left py-2 text-xs text-muted-foreground">Device</th><th className="text-right py-2 text-xs text-muted-foreground">Orders</th><th className="text-right py-2 text-xs text-muted-foreground">Revenue</th></tr></thead>
+                  <tbody>
+                    {deviceWiseSales.map((d, i) => (
+                      <tr key={i} className="border-b border-border/30"><td className="py-2 text-foreground">{d.name}</td><td className="py-2 text-right text-muted-foreground">{d.count}</td><td className="py-2 text-right font-semibold text-primary">₹{d.total.toLocaleString()}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {deviceWiseSales.length === 0 && <p className="text-muted-foreground text-center py-8">No device sales data</p>}
             </div>
           </>}
         </>}

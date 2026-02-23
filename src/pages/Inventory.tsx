@@ -264,6 +264,18 @@ export default function Inventory() {
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Low Stock Threshold</label>
                 <input type="number" value={editItem.low_stock_threshold || ""} onChange={e => setEditItem({ ...editItem, low_stock_threshold: parseFloat(e.target.value) || 10 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
 
+              {/* Units per pack - for loose selling (e.g., 10 tablets per strip) */}
+              {["strip", "box", "bottle", "pack", "dozen"].includes(editItem.unit || "") && (
+                <div><label className="text-xs font-medium text-accent mb-1 block">Units per Pack (for loose selling)</label>
+                  <input type="number" value={editItem.weight_per_unit || ""} onChange={e => setEditItem({ ...editItem, weight_per_unit: parseFloat(e.target.value) || null })}
+                    placeholder="e.g., 10 tablets per strip"
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" />
+                  {editItem.weight_per_unit && editItem.weight_per_unit > 0 && editItem.price ? (
+                    <p className="text-[10px] text-accent mt-1">Loose price: ₹{(Number(editItem.price) / editItem.weight_per_unit).toFixed(2)} per unit</p>
+                  ) : null}
+                </div>
+              )}
+
               {/* Medical fields */}
               {isMedical && <>
                 <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Batch Number</label>
