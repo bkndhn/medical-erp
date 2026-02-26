@@ -139,11 +139,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error, data } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    
+    // Track active session
+    if (data.user) {
+      const deviceName = navigator.userAgent.includes("Mobile") ? "Mobile Device" : 
+        navigator.userAgent.includes("Chrome") ? "Chrome Browser" :
+        navigator.userAgent.includes("Firefox") ? "Firefox Browser" :
+        navigator.userAgent.includes("Safari") ? "Safari Browser" : "Unknown Browser";
+      
+      // Get user profile to find tenant_id
+      const { data: prof } = await supabase.from("profiles").select("tenant_id").eq("user_id", data.user.id).single();
+      if (prof?.tenant_id) {
+        // Check session limit
+        const { data: tenant } = await supabase.from("tenants").select("max_sessions").eq("id", prof.tenant_id).single();
+        const { data: sessions } = await supabase.from("active_sessions").select("id").eq("tenant_id", prof.tenant_id);
+        const maxSessions = (tenant as any)?.max_sessions || 5;
+        
+        if (sessions && sessions.length >= maxSessions) {
+          // Check if user already has a session (allow re-login)
+          const existing = sessions.find((s: any) => false); // can't check user_id from here
+          await supabase.auth.signOut();
+          throw new Error(`Maximum ${maxSessions} concurrent sessions reached for this business. Please ask an admin to terminate a session.`);
+        }
+        
+        await supabase.from("active_sessions").upsert({
+          user_id: data.user.id,
+          tenant_id: prof.tenant_id,
+          device_name: deviceName,
+          last_active_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+      }
+    }
   };
 
   const signOut = async () => {
+    // Remove active session before signing out
+    if (user) {
+      await supabase.from("active_sessions").delete().eq("user_id", user.id);
+    }
     await supabase.auth.signOut();
   };
 

@@ -14,6 +14,44 @@ export type Database = {
   }
   public: {
     Tables: {
+      active_sessions: {
+        Row: {
+          created_at: string
+          device_name: string | null
+          id: string
+          ip_address: string | null
+          last_active_at: string
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_name?: string | null
+          id?: string
+          ip_address?: string | null
+          last_active_at?: string
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_name?: string | null
+          id?: string
+          ip_address?: string | null
+          last_active_at?: string
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "active_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_logs: {
         Row: {
           action: string
@@ -907,6 +945,7 @@ export type Database = {
           logo_url: string | null
           max_branches: number
           max_devices: number
+          max_sessions: number
           max_users: number
           name: string
           owner_id: string | null
@@ -925,6 +964,7 @@ export type Database = {
           logo_url?: string | null
           max_branches?: number
           max_devices?: number
+          max_sessions?: number
           max_users?: number
           name: string
           owner_id?: string | null
@@ -943,6 +983,7 @@ export type Database = {
           logo_url?: string | null
           max_branches?: number
           max_devices?: number
+          max_sessions?: number
           max_users?: number
           name?: string
           owner_id?: string | null
