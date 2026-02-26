@@ -3,10 +3,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Truck, Plus, Search, Edit2, Trash2, X, Save } from "lucide-react";
 import { toast } from "sonner";
+import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 interface Supplier {
   id: string; name: string; phone: string | null; email: string | null;
   address: string | null; gst_number: string | null; outstanding: number;
+  created_at: string;
 }
 
 export default function Suppliers() {
@@ -17,6 +19,8 @@ export default function Suppliers() {
   const [showForm, setShowForm] = useState(false);
   const [editItem, setEditItem] = useState<Partial<Supplier> | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -30,7 +34,10 @@ export default function Suppliers() {
 
   const filtered = items.filter(i => {
     const q = search.toLowerCase();
-    return !q || i.name.toLowerCase().includes(q) || i.phone?.includes(q);
+    if (q && !i.name.toLowerCase().includes(q) && !i.phone?.includes(q)) return false;
+    if (dateFrom && new Date(i.created_at) < dateFrom) return false;
+    if (dateTo && new Date(i.created_at) > dateTo) return false;
+    return true;
   });
 
   const handleSave = async () => {
@@ -61,15 +68,23 @@ export default function Suppliers() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="ml-10 md:ml-0">
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Truck className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Suppliers</h1>
-            <p className="text-sm text-muted-foreground">{items.length} suppliers</p>
+            <p className="text-sm text-muted-foreground">{filtered.length} suppliers</p>
           </div>
           <button onClick={() => { setEditItem({ name: "", phone: "", email: "", address: "", gst_number: "", outstanding: 0 }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
             <Plus className="h-4 w-4" /> Add Supplier
           </button>
         </div>
-        <div className="mt-3 relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search suppliers..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+          </div>
+          <DateFilterExport
+            defaultPreset="all_time"
+            onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }}
+            onExportExcel={() => exportToExcel(filtered.map(s => ({ Name: s.name, Phone: s.phone || "", Email: s.email || "", GST: s.gst_number || "", Outstanding: Number(s.outstanding).toFixed(2) })), "suppliers")}
+            onExportPDF={() => exportToPDF("Suppliers", ["Name", "Phone", "Email", "GST", "Outstanding"], filtered.map(s => [s.name, s.phone || "—", s.email || "—", s.gst_number || "—", `₹${Number(s.outstanding).toFixed(0)}`]))}
+          />
         </div>
       </header>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">

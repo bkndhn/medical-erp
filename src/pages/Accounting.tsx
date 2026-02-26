@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Wallet, Plus, Search, X, TrendingUp, TrendingDown } from "lucide-react";
+import { Wallet, Plus, X } from "lucide-react";
 import { toast } from "sonner";
+import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 const expenseTypes = ["rent", "salary", "utility", "transport", "other"] as const;
 
@@ -13,6 +14,8 @@ export default function Accounting() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ category: "other", description: "", amount: 0, paid_to: "", payment_mode: "cash", expense_date: new Date().toISOString().split("T")[0] });
   const [saving, setSaving] = useState(false);
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -24,7 +27,13 @@ export default function Accounting() {
 
   useEffect(() => { fetch_(); }, [tenantId]);
 
-  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const filtered = expenses.filter(e => {
+    if (dateFrom && new Date(e.expense_date || e.created_at) < dateFrom) return false;
+    if (dateTo && new Date(e.expense_date || e.created_at) > dateTo) return false;
+    return true;
+  });
+
+  const totalExpenses = filtered.reduce((s, e) => s + Number(e.amount), 0);
 
   const handleSave = async () => {
     if (!form.description || !tenantId) return;
@@ -43,17 +52,24 @@ export default function Accounting() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="ml-10 md:ml-0">
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Wallet className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Accounting</h1>
-            <p className="text-sm text-muted-foreground">Total Expenses: ₹{totalExpenses.toLocaleString()}</p>
+            <p className="text-sm text-muted-foreground">Total: ₹{totalExpenses.toLocaleString()}</p>
           </div>
           <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
             <Plus className="h-4 w-4" /> Add Expense
           </button>
         </div>
+        <div className="mt-3">
+          <DateFilterExport
+            onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }}
+            onExportExcel={() => exportToExcel(filtered.map(e => ({ Date: e.expense_date, Category: e.category, Description: e.description, PaidTo: e.paid_to || "", Amount: Number(e.amount).toFixed(2) })), "expenses")}
+            onExportPDF={() => exportToPDF("Expenses", ["Date", "Category", "Description", "Paid To", "Amount"], filtered.map(e => [e.expense_date, e.category, e.description, e.paid_to || "—", `₹${Number(e.amount).toFixed(0)}`]))}
+          />
+        </div>
       </header>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           {expenseTypes.slice(0, 3).map(type => {
-            const total = expenses.filter(e => e.category === type).reduce((s, e) => s + Number(e.amount), 0);
+            const total = filtered.filter(e => e.category === type).reduce((s, e) => s + Number(e.amount), 0);
             return (
               <div key={type} className="glass-card rounded-xl p-4">
                 <p className="text-xs font-medium text-muted-foreground uppercase">{type}</p>
@@ -63,7 +79,7 @@ export default function Accounting() {
           })}
         </div>
         {loading ? <div className="flex items-center justify-center h-32 text-muted-foreground">Loading...</div> :
-        expenses.length === 0 ? <div className="flex flex-col items-center justify-center h-32 text-muted-foreground"><Wallet className="h-12 w-12 mb-3 opacity-30" /><p>No expenses recorded</p></div> :
+        filtered.length === 0 ? <div className="flex flex-col items-center justify-center h-32 text-muted-foreground"><Wallet className="h-12 w-12 mb-3 opacity-30" /><p>No expenses recorded</p></div> :
         <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border">
           <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Date</th>
           <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Category</th>
@@ -71,7 +87,7 @@ export default function Accounting() {
           <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Paid To</th>
           <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Amount</th>
         </tr></thead><tbody>
-          {expenses.map(e => (
+          {filtered.map(e => (
             <tr key={e.id} className="border-b border-border/30 hover:bg-muted/20">
               <td className="py-3 px-3 text-muted-foreground">{e.expense_date}</td>
               <td className="py-3 px-3"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary capitalize">{e.category}</span></td>

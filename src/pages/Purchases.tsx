@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Truck, Plus, Search, Eye, X } from "lucide-react";
+import { Truck, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
+import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 export default function Purchases() {
   const { tenantId } = useAuth();
@@ -13,6 +14,8 @@ export default function Purchases() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ supplier_id: "", invoice_number: "", subtotal: 0, tax_total: 0, grand_total: 0, notes: "" });
   const [saving, setSaving] = useState(false);
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -45,8 +48,13 @@ export default function Purchases() {
 
   const filtered = purchases.filter(p => {
     const q = search.toLowerCase();
-    return !q || p.invoice_number?.toLowerCase().includes(q);
+    if (q && !p.invoice_number?.toLowerCase().includes(q)) return false;
+    if (dateFrom && new Date(p.created_at) < dateFrom) return false;
+    if (dateTo && new Date(p.created_at) > dateTo) return false;
+    return true;
   });
+
+  const supplierName = (id: string) => suppliers.find(s => s.id === id)?.name || "—";
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -54,15 +62,22 @@ export default function Purchases() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2"><Truck className="h-6 w-6 text-primary" /> Purchases</h1>
-            <p className="text-sm text-muted-foreground">{purchases.length} purchase orders</p>
+            <p className="text-sm text-muted-foreground">{filtered.length} purchase orders</p>
           </div>
           <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
             <Plus className="h-4 w-4" /> New Purchase
           </button>
         </div>
-        <div className="mt-3 relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by invoice..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by invoice..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+          </div>
+          <DateFilterExport
+            onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }}
+            onExportExcel={() => exportToExcel(filtered.map(p => ({ Invoice: p.invoice_number || "", Date: new Date(p.created_at).toLocaleDateString(), Supplier: supplierName(p.supplier_id), Status: p.status, Total: Number(p.grand_total).toFixed(2) })), "purchases")}
+            onExportPDF={() => exportToPDF("Purchases", ["Invoice", "Date", "Supplier", "Status", "Total"], filtered.map(p => [p.invoice_number || "—", new Date(p.created_at).toLocaleDateString(), supplierName(p.supplier_id), p.status, `₹${Number(p.grand_total).toFixed(0)}`]))}
+          />
         </div>
       </header>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-6">
@@ -71,6 +86,7 @@ export default function Purchases() {
         <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border">
           <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Invoice #</th>
           <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Date</th>
+          <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Supplier</th>
           <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Status</th>
           <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Total</th>
         </tr></thead><tbody>
@@ -78,6 +94,7 @@ export default function Purchases() {
             <tr key={p.id} className="border-b border-border/30 hover:bg-muted/20">
               <td className="py-3 px-3 font-mono text-primary text-xs">{p.invoice_number || "—"}</td>
               <td className="py-3 px-3 text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</td>
+              <td className="py-3 px-3 text-muted-foreground">{supplierName(p.supplier_id)}</td>
               <td className="py-3 px-3"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${p.status === "received" ? "bg-success/10 text-success" : "bg-accent/10 text-accent"}`}>{p.status}</span></td>
               <td className="py-3 px-3 text-right font-semibold text-foreground">₹{Number(p.grand_total).toFixed(0)}</td>
             </tr>

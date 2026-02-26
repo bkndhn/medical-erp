@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Shield, Building2, Pause, Play, Trash2, Users, Search, AlertTriangle, BarChart3, Package, CreditCard } from "lucide-react";
+import { Shield, Building2, Pause, Play, Trash2, Users, Search, AlertTriangle, CreditCard, Settings, Save } from "lucide-react";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
@@ -10,7 +10,7 @@ const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(
 interface Tenant {
   id: string; name: string; industry: string; subscription: string;
   is_active: boolean; owner_id: string | null; created_at: string;
-  max_users: number; max_branches: number; email: string | null; phone: string | null;
+  max_users: number; max_branches: number; max_sessions: number; email: string | null; phone: string | null;
 }
 
 export default function SuperAdmin() {
@@ -20,8 +20,10 @@ export default function SuperAdmin() {
   const [sales, setSales] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [tab, setTab] = useState<"businesses" | "analytics">("businesses");
+  const [tab, setTab] = useState<"businesses" | "analytics" | "settings">("businesses");
   const [confirmAction, setConfirmAction] = useState<{ type: string; tenantId: string; tenantName: string } | null>(null);
+  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   const isSuperAdmin = hasRole("super_admin");
 
@@ -82,6 +84,7 @@ export default function SuperAdmin() {
       await supabase.from("payments").delete().eq("tenant_id", tenantId);
       await supabase.from("expenses").delete().eq("tenant_id", tenantId);
       await supabase.from("audit_logs").delete().eq("tenant_id", tenantId);
+      await supabase.from("active_sessions").delete().eq("tenant_id", tenantId);
       await supabase.from("devices").delete().eq("tenant_id", tenantId);
       await supabase.from("items").delete().eq("tenant_id", tenantId);
       await supabase.from("categories").delete().eq("tenant_id", tenantId);
@@ -98,6 +101,19 @@ export default function SuperAdmin() {
     } catch (err: any) {
       toast.error(err.message || "Delete failed");
     }
+  };
+
+  const saveSessionLimit = async () => {
+    if (!editingTenant) return;
+    setSavingSettings(true);
+    const { error } = await supabase.from("tenants").update({
+      max_sessions: editingTenant.max_sessions,
+      max_users: editingTenant.max_users,
+      max_branches: editingTenant.max_branches,
+    }).eq("id", editingTenant.id);
+    if (error) toast.error(error.message);
+    else { toast.success("Settings saved"); setEditingTenant(null); fetchData(); }
+    setSavingSettings(false);
   };
 
   const filtered = tenants.filter(t => {
@@ -131,9 +147,9 @@ export default function SuperAdmin() {
           </div>
         </div>
         <div className="flex gap-2 mt-3">
-          {(["businesses", "analytics"] as const).map(t => (
+          {(["businesses", "analytics", "settings"] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-all touch-manipulation ${tab === t ? "bg-primary/15 text-primary border border-primary/30" : "bg-muted text-muted-foreground border border-transparent"}`}>
-              {t === "businesses" ? "🏢" : "📊"} {t}
+              {t === "businesses" ? "🏢" : t === "analytics" ? "📊" : "⚙️"} {t}
             </button>
           ))}
         </div>
@@ -147,6 +163,51 @@ export default function SuperAdmin() {
 
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6">
         {loading ? <div className="text-center text-muted-foreground py-12">Loading...</div> : <>
+
+          {tab === "settings" && (
+            <div className="max-w-2xl mx-auto space-y-4">
+              <h2 className="text-lg font-bold text-foreground flex items-center gap-2"><Settings className="h-5 w-5 text-primary" /> Session & Limits per Business</h2>
+              <p className="text-sm text-muted-foreground">Configure max concurrent logins, users, and branches for each tenant.</p>
+              <div className="space-y-3">
+                {tenants.map(t => (
+                  <div key={t.id} className="glass-card rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-semibold text-foreground truncate">{t.name}</h3>
+                      <p className="text-xs text-muted-foreground capitalize">{t.industry} • {t.subscription}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="flex items-center gap-1">
+                        <label className="text-[10px] text-muted-foreground">Sessions:</label>
+                        <input type="number" min={1} max={100} value={editingTenant?.id === t.id ? editingTenant.max_sessions : t.max_sessions}
+                          onChange={e => setEditingTenant({ ...(editingTenant?.id === t.id ? editingTenant : t), max_sessions: parseInt(e.target.value) || 1 })}
+                          onFocus={() => { if (editingTenant?.id !== t.id) setEditingTenant(t); }}
+                          className="w-14 px-2 py-1 rounded bg-muted border border-border text-xs text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <label className="text-[10px] text-muted-foreground">Users:</label>
+                        <input type="number" min={1} max={500} value={editingTenant?.id === t.id ? editingTenant.max_users : t.max_users}
+                          onChange={e => setEditingTenant({ ...(editingTenant?.id === t.id ? editingTenant : t), max_users: parseInt(e.target.value) || 1 })}
+                          onFocus={() => { if (editingTenant?.id !== t.id) setEditingTenant(t); }}
+                          className="w-14 px-2 py-1 rounded bg-muted border border-border text-xs text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <label className="text-[10px] text-muted-foreground">Branches:</label>
+                        <input type="number" min={1} max={100} value={editingTenant?.id === t.id ? editingTenant.max_branches : t.max_branches}
+                          onChange={e => setEditingTenant({ ...(editingTenant?.id === t.id ? editingTenant : t), max_branches: parseInt(e.target.value) || 1 })}
+                          onFocus={() => { if (editingTenant?.id !== t.id) setEditingTenant(t); }}
+                          className="w-14 px-2 py-1 rounded bg-muted border border-border text-xs text-foreground text-center focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                      </div>
+                      {editingTenant?.id === t.id && (
+                        <button onClick={saveSessionLimit} disabled={savingSettings} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50">
+                          <Save className="h-3 w-3" /> {savingSettings ? "..." : "Save"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {tab === "analytics" && (
             <div className="space-y-6">
@@ -178,7 +239,6 @@ export default function SuperAdmin() {
                   )}
                 </div>
               </div>
-              {/* Revenue per tenant */}
               <div className="glass-card rounded-xl p-5">
                 <h3 className="text-sm font-semibold text-foreground mb-4">Revenue by Business</h3>
                 <div className="space-y-2">
@@ -212,10 +272,11 @@ export default function SuperAdmin() {
                         {t.is_active ? "Active" : "Paused"}
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+                    <div className="grid grid-cols-3 gap-2 mb-3 text-xs">
                       <div className="flex items-center gap-1.5 text-muted-foreground"><Users className="h-3 w-3" /> {getTenantUserCount(t.id)}/{t.max_users}</div>
+                      <div className="flex items-center gap-1.5 text-muted-foreground" title="Max sessions"><Settings className="h-3 w-3" /> {t.max_sessions} sess</div>
                       <div className="flex items-center gap-1.5 text-muted-foreground"><CreditCard className="h-3 w-3" /> ₹{(tenantRevenue[t.id] || 0).toLocaleString()}</div>
-                      {t.email && <div className="col-span-2 text-muted-foreground truncate">{t.email}</div>}
+                      {t.email && <div className="col-span-3 text-muted-foreground truncate">{t.email}</div>}
                     </div>
                     <p className="text-[10px] text-muted-foreground mb-3">Created {new Date(t.created_at).toLocaleDateString()}</p>
                     <div className="flex gap-2">
@@ -236,7 +297,6 @@ export default function SuperAdmin() {
         </>}
       </div>
 
-      {/* Confirmation Modal */}
       {confirmAction && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setConfirmAction(null)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-sm animate-fade-in" onClick={e => e.stopPropagation()}>
