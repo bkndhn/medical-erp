@@ -22,7 +22,11 @@ interface PaymentLine {
   mode: string; amount: number;
 }
 
-const PAYMENT_MODES = ["cash", "upi", "card", "credit"] as const;
+interface PaymentMethodConfig {
+  code: string; name: string; icon: string;
+}
+
+const DEFAULT_PAYMENT_MODES = ["cash", "upi", "card", "credit"];
 const QUICK_QTYS = [1, 5, 10, 12, 20, 25, 50, 100];
 
 const shortcutMap = [
@@ -52,6 +56,9 @@ export default function POS() {
   const [heldBills, setHeldBills] = useState<any[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Payment methods from settings
+  const [paymentModes, setPaymentModes] = useState<PaymentMethodConfig[]>([]);
+
   // Split payment state
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([{ mode: "cash", amount: 0 }]);
   const [cashReceived, setCashReceived] = useState("");
@@ -62,10 +69,16 @@ export default function POS() {
       supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name"),
       supabase.from("categories").select("*").eq("tenant_id", tenantId).order("sort_order"),
       supabase.from("sales").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId),
-    ]).then(([{ data: it }, { data: cat }, { count }]) => {
+      supabase.from("payment_methods").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("sort_order"),
+    ]).then(([{ data: it }, { data: cat }, { count }, { data: pm }]) => {
       setItems((it as unknown as Item[]) || []);
       setCategories((cat as any) || []);
       setBillCount((count || 0) + 1);
+      if (pm && pm.length > 0) {
+        setPaymentModes((pm as any).map((p: any) => ({ code: p.code, name: p.name, icon: p.icon })));
+      } else {
+        setPaymentModes(DEFAULT_PAYMENT_MODES.map(m => ({ code: m, name: m.toUpperCase(), icon: "💳" })));
+      }
     });
   }, [tenantId]);
 
@@ -491,7 +504,7 @@ export default function POS() {
                 <div key={idx} className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
                   <select value={line.mode} onChange={e => updatePaymentLine(idx, "mode", e.target.value)}
                     className="px-2 py-2 rounded-lg bg-muted border border-border text-sm text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-24">
-                    {PAYMENT_MODES.map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
+                    {paymentModes.map(m => <option key={m.code} value={m.code}>{m.icon} {m.name}</option>)}
                   </select>
                   <div className="flex-1 relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>

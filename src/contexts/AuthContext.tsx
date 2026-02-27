@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -212,6 +212,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     return Array.from(allPages);
   };
+
+  // Heartbeat: update last_active_at every 60 seconds
+  const heartbeatRef = useRef<ReturnType<typeof setInterval>>();
+  useEffect(() => {
+    if (user) {
+      const beat = () => {
+        supabase.from("active_sessions").update({ last_active_at: new Date().toISOString() }).eq("user_id", user.id).then(() => {});
+      };
+      beat();
+      heartbeatRef.current = setInterval(beat, 60_000);
+    }
+    return () => { if (heartbeatRef.current) clearInterval(heartbeatRef.current); };
+  }, [user]);
 
   return (
     <AuthContext.Provider
