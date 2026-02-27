@@ -492,6 +492,47 @@ export type Database = {
           },
         ]
       }
+      payment_methods: {
+        Row: {
+          code: string
+          created_at: string
+          icon: string | null
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number | null
+          tenant_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number | null
+          tenant_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          icon?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_methods_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number
