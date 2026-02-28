@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="32" fill="#0d1117"/>
+  <rect x="24" y="24" width="144" height="144" rx="24" fill="#1a2332"/>
+  <path d="M96 52 L120 80 L96 108 L72 80 Z" fill="#22b8cf" opacity="0.9"/>
+  <path d="M96 68 L108 80 L96 92 L84 80 Z" fill="#0d1117"/>
+  <text x="96" y="142" text-anchor="middle" font-family="system-ui" font-weight="800" font-size="20" fill="#22b8cf">ERP</text>
+</svg>
