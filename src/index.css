@@ -141,4 +141,18 @@
     background: hsl(var(--border));
     border-radius: 3px;
   }
+
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Prevent overscroll on mobile */
+  html, body {
+    overscroll-behavior: none;
+  }
+
+  /* Fix for mobile viewport height */
+  .h-screen {
+    height: 100dvh;
+  }
 }

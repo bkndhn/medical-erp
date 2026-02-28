@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import { AppSidebar } from "@/components/AppSidebar";
+import MobileBottomNav from "@/components/MobileBottomNav";
 
 export default function Layout() {
   return (
@@ -8,6 +9,7 @@ export default function Layout() {
       <main className="flex-1 overflow-hidden">
         <Outlet />
       </main>
+      <MobileBottomNav />
     </div>
   );
 }
