@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X } from "lucide-react";
+import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette } from "lucide-react";
 import { toast } from "sonner";
 
 interface PaymentMethod {
@@ -26,11 +26,21 @@ export default function Settings() {
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"profile" | "payments">("profile");
+  const [tab, setTab] = useState<"profile" | "payments" | "appearance">("profile");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [showPmForm, setShowPmForm] = useState(false);
   const [pmForm, setPmForm] = useState<Partial<PaymentMethod>>({ name: "", code: "", icon: "💳", is_active: true, sort_order: 0 });
   const [pmSaving, setPmSaving] = useState(false);
+
+  // Theme
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    return (localStorage.getItem("app-theme") as "dark" | "light") || "dark";
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("app-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (tenantId) {
@@ -50,7 +60,6 @@ export default function Settings() {
     if (data && data.length > 0) {
       setPaymentMethods(data as any);
     } else {
-      // Auto-seed defaults
       const inserts = DEFAULT_METHODS.map((m, i) => ({ ...m, tenant_id: tenantId, sort_order: i, is_active: true }));
       await supabase.from("payment_methods").insert(inserts as any);
       const { data: d2 } = await supabase.from("payment_methods").select("*").eq("tenant_id", tenantId).order("sort_order");
@@ -105,16 +114,22 @@ export default function Settings() {
     fetchPaymentMethods();
   };
 
+  const tabs = [
+    { id: "profile" as const, label: "Profile & Business", icon: User },
+    { id: "payments" as const, label: "Payment Methods", icon: CreditCard },
+    { id: "appearance" as const, label: "Appearance", icon: Palette },
+  ];
+
   return (
-    <div className="h-screen overflow-y-auto scrollbar-thin">
+    <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
         <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2 ml-10 md:ml-0">
           <SettingsIcon className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Settings
         </h1>
-        <div className="flex gap-2 mt-3">
-          {(["profile", "payments"] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-all touch-manipulation ${tab === t ? "bg-primary/15 text-primary border border-primary/30" : "bg-muted text-muted-foreground border border-transparent"}`}>
-              {t === "profile" ? <User className="h-3 w-3 inline mr-1" /> : <CreditCard className="h-3 w-3 inline mr-1" />}{t === "profile" ? "Profile & Business" : "Payment Methods"}
+        <div className="flex gap-2 mt-3 overflow-x-auto scrollbar-thin">
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all touch-manipulation ${tab === t.id ? "bg-primary/15 text-primary border border-primary/30" : "bg-muted text-muted-foreground border border-transparent"}`}>
+              <t.icon className="h-3 w-3" /> {t.label}
             </button>
           ))}
         </div>
@@ -152,14 +167,13 @@ export default function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary" /> Payment Methods</h3>
-                <p className="text-xs text-muted-foreground mt-1">These options appear in POS billing. Toggle to enable/disable.</p>
+                <p className="text-xs text-muted-foreground mt-1">These options appear in POS billing.</p>
               </div>
               <button onClick={() => { setPmForm({ name: "", code: "", icon: "💳", is_active: true, sort_order: paymentMethods.length }); setShowPmForm(true); }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
                 <Plus className="h-4 w-4" /> Add
               </button>
             </div>
-
             <div className="space-y-2">
               {paymentMethods.map(pm => (
                 <div key={pm.id} className={`glass-card rounded-xl p-4 flex items-center gap-3 transition-opacity ${!pm.is_active ? "opacity-50" : ""}`}>
@@ -175,6 +189,30 @@ export default function Settings() {
                   <button onClick={() => deletePm(pm.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {tab === "appearance" && (
+          <div className="space-y-4">
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-4"><Palette className="h-4 w-4 text-primary" /> Theme</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setTheme("dark")} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all touch-manipulation ${theme === "dark" ? "border-primary bg-primary/5" : "border-border bg-muted/30"}`}>
+                  <Moon className={`h-6 w-6 ${theme === "dark" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-foreground">Dark</p>
+                    <p className="text-[10px] text-muted-foreground">Easy on the eyes</p>
+                  </div>
+                </button>
+                <button onClick={() => setTheme("light")} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all touch-manipulation ${theme === "light" ? "border-primary bg-primary/5" : "border-border bg-muted/30"}`}>
+                  <Sun className={`h-6 w-6 ${theme === "light" ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-foreground">Light</p>
+                    <p className="text-[10px] text-muted-foreground">Classic bright look</p>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         )}

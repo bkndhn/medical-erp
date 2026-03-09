@@ -26,6 +26,7 @@ import SuperAdmin from "./pages/SuperAdmin";
 import UserManagement from "./pages/UserManagement";
 import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
+import Install from "./pages/Install";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/install" element={<Install />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />

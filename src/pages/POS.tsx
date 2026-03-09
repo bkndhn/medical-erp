@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill } from "lucide-react";
+import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
@@ -14,8 +14,8 @@ interface Item {
 
 interface CartItem {
   item: Item; quantity: number; discount: number; total: number;
-  isLoose?: boolean; // selling individual units from a pack (e.g., single tablet from strip)
-  loosePrice?: number; // price per loose unit
+  isLoose?: boolean;
+  loosePrice?: number;
 }
 
 interface PaymentLine {
@@ -40,6 +40,9 @@ const shortcutMap = [
   { key: 'Esc', action: 'Close / Cancel', category: 'General' },
 ];
 
+const PACK_UNITS = ["strip", "box", "bottle", "pack", "dozen"];
+const isPackUnit = (unit: string | null) => unit ? PACK_UNITS.includes(unit.toLowerCase()) : false;
+
 export default function POS() {
   const { tenantId, branchId, user } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
@@ -62,6 +65,10 @@ export default function POS() {
   // Split payment state
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([{ mode: "cash", amount: 0 }]);
   const [cashReceived, setCashReceived] = useState("");
+
+  // Bill-level discount
+  const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
+  const [discountValue, setDiscountValue] = useState<number>(0);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -94,14 +101,10 @@ export default function POS() {
     return filtered;
   }, [items, activeCategory, searchQuery]);
 
-  const PACK_UNITS = ["strip", "box", "bottle", "pack", "dozen"];
-  const isPackUnit = (unit: string | null) => unit ? PACK_UNITS.includes(unit.toLowerCase()) : false;
-
   const addToCart = (item: Item, loose = false) => {
     const unitPrice = loose && item.weight_per_unit && item.weight_per_unit > 0
       ? Number(item.price) / item.weight_per_unit
       : Number(item.price);
-    const cartKey = `${item.id}${loose ? "_loose" : ""}`;
     
     setCart(prev => {
       const existing = prev.find(i => (i.item.id === item.id && !!i.isLoose === loose));
@@ -138,7 +141,7 @@ export default function POS() {
   };
 
   const removeItem = (id: string, isLoose?: boolean) => setCart(prev => prev.filter(i => !(i.item.id === id && !!i.isLoose === !!isLoose)));
-  const clearCart = () => { setCart([]); toast.info("Cart cleared"); };
+  const clearCart = () => { setCart([]); setDiscountValue(0); toast.info("Cart cleared"); };
 
   // Held bills
   const holdBill = async () => {
@@ -148,7 +151,7 @@ export default function POS() {
       const { data: sale, error } = await supabase.from("sales").insert({
         tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
         invoice_number: `HOLD-${Date.now().toString(36).toUpperCase()}`,
-        subtotal, discount: 0, tax_total: gstTotal, grand_total: grandTotal,
+        subtotal, discount: billDiscount, tax_total: gstTotal, grand_total: roundedTotal,
         payment_mode: "cash" as any, amount_paid: 0, status: "held" as any,
       } as any).select().single();
       if (error) throw error;
@@ -161,7 +164,7 @@ export default function POS() {
       await supabase.from("sale_items").insert(saleItems as any);
 
       toast.success("Bill held successfully");
-      setCart([]);
+      setCart([]); setDiscountValue(0);
       fetchHeldBills();
     } catch (err: any) {
       toast.error(err.message || "Failed to hold bill");
@@ -191,9 +194,10 @@ export default function POS() {
           };
         });
         setCart(restoredCart);
+        setDiscountValue(Number(heldSale.discount) || 0);
+        setDiscountType("amount");
       }
 
-      // Delete the held sale
       await supabase.from("sale_items").delete().eq("sale_id", heldSale.id);
       await supabase.from("sales").update({ status: "cancelled" as any } as any).eq("id", heldSale.id);
 
@@ -207,12 +211,21 @@ export default function POS() {
 
   useEffect(() => { if (tenantId) fetchHeldBills(); }, [tenantId]);
 
+  // Totals with discount and round-off
   const subtotal = cart.reduce((sum, i) => sum + i.total, 0);
-  const gstTotal = cart.reduce((sum, i) => sum + (i.total * (Number(i.item.gst_rate) || 0) / 100), 0);
-  const grandTotal = subtotal + gstTotal;
+  const billDiscount = discountType === "percent" ? (subtotal * discountValue / 100) : discountValue;
+  const afterDiscount = Math.max(0, subtotal - billDiscount);
+  const gstTotal = cart.reduce((sum, i) => {
+    const itemProportion = i.total / (subtotal || 1);
+    const discountedItemTotal = afterDiscount * itemProportion;
+    return sum + (discountedItemTotal * (Number(i.item.gst_rate) || 0) / 100);
+  }, 0);
+  const grandTotalRaw = afterDiscount + gstTotal;
+  const roundOff = Math.round(grandTotalRaw) - grandTotalRaw;
+  const roundedTotal = Math.round(grandTotalRaw);
 
   const totalPaid = paymentLines.reduce((s, l) => s + l.amount, 0);
-  const remaining = grandTotal - totalPaid;
+  const remaining = roundedTotal - totalPaid;
 
   const addPaymentLine = () => {
     setPaymentLines(prev => [...prev, { mode: "cash", amount: 0 }]);
@@ -229,31 +242,31 @@ export default function POS() {
 
   const fillRemaining = (idx: number) => {
     const otherTotal = paymentLines.reduce((s, l, i) => i === idx ? s : s + l.amount, 0);
-    updatePaymentLine(idx, "amount", Math.max(0, grandTotal - otherTotal));
+    updatePaymentLine(idx, "amount", Math.max(0, roundedTotal - otherTotal));
   };
 
   const openPayment = () => {
-    setPaymentLines([{ mode: "cash", amount: grandTotal }]);
+    setPaymentLines([{ mode: "cash", amount: roundedTotal }]);
     setCashReceived("");
     setShowPayment(true);
   };
 
   const completeSale = async () => {
     if (!tenantId || cart.length === 0) return;
-    if (totalPaid < grandTotal - 0.01) {
-      toast.error(`Payment short by ₹${(grandTotal - totalPaid).toFixed(2)}`);
+    if (totalPaid < roundedTotal - 0.01) {
+      toast.error(`Payment short by ₹${(roundedTotal - totalPaid).toFixed(2)}`);
       return;
     }
     try {
       const isSplit = paymentLines.length > 1;
       const primaryMode = isSplit ? "split" : paymentLines[0].mode;
       const cashLine = paymentLines.find(l => l.mode === "cash");
-      const changeAmount = cashLine ? Math.max(0, totalPaid - grandTotal) : 0;
+      const changeAmount = cashLine ? Math.max(0, totalPaid - roundedTotal) : 0;
 
       const { data: sale, error } = await supabase.from("sales").insert({
         tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
-        invoice_number: billNo, subtotal, discount: 0, tax_total: gstTotal,
-        grand_total: grandTotal, payment_mode: primaryMode as any,
+        invoice_number: billNo, subtotal, discount: billDiscount, tax_total: gstTotal,
+        grand_total: roundedTotal, payment_mode: primaryMode as any,
         amount_paid: totalPaid, change_amount: changeAmount, status: "completed" as any,
       } as any).select().single();
       if (error) throw error;
@@ -265,8 +278,18 @@ export default function POS() {
       }));
       await supabase.from("sale_items").insert(saleItems as any);
 
+      // Stock deduction: for loose sales, deduct fractional packs
       for (const ci of cart) {
-        await supabase.from("items").update({ stock: Number(ci.item.stock) - ci.quantity } as any).eq("id", ci.item.id);
+        let stockReduction: number;
+        if (ci.isLoose && ci.item.weight_per_unit && ci.item.weight_per_unit > 0) {
+          // Loose: deduct in pack units (e.g., 3 tablets from 10/strip = 0.3 strips)
+          stockReduction = ci.quantity / ci.item.weight_per_unit;
+        } else {
+          stockReduction = ci.quantity;
+        }
+        const newStock = Math.max(0, Number(ci.item.stock) - stockReduction);
+        // Store with precision for fractional packs
+        await supabase.from("items").update({ stock: parseFloat(newStock.toFixed(4)) } as any).eq("id", ci.item.id);
       }
 
       // Record each payment line separately
@@ -278,8 +301,8 @@ export default function POS() {
       }
 
       const modeStr = isSplit ? paymentLines.filter(l => l.amount > 0).map(l => `₹${l.amount} ${l.mode.toUpperCase()}`).join(" + ") : primaryMode.toUpperCase();
-      toast.success(`Bill ${billNo} completed! ₹${grandTotal.toFixed(0)} via ${modeStr}`);
-      setCart([]); setShowPayment(false); setCashReceived("");
+      toast.success(`Bill ${billNo} completed! ₹${roundedTotal} via ${modeStr}`);
+      setCart([]); setShowPayment(false); setCashReceived(""); setDiscountValue(0);
       setBillCount(prev => prev + 1);
 
       const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
@@ -299,6 +322,18 @@ export default function POS() {
     onHelp: () => setShowShortcuts(s => !s),
     onPrintComplete: () => { if (cart.length > 0 && !showPayment) openPayment(); else if (showPayment) completeSale(); },
   });
+
+  // Helper: display stock with pack+loose info
+  const displayStock = (item: Item) => {
+    const stock = Number(item.stock);
+    if (isPackUnit(item.unit) && item.weight_per_unit && item.weight_per_unit > 0) {
+      const packs = Math.floor(stock);
+      const looseUnits = Math.round((stock - packs) * item.weight_per_unit);
+      if (looseUnits > 0) return `${packs} ${item.unit} + ${looseUnits} loose`;
+      return `${packs} ${item.unit}`;
+    }
+    return `${stock % 1 === 0 ? stock : stock.toFixed(2)}`;
+  };
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
@@ -356,7 +391,7 @@ export default function POS() {
                         {Number(item.mrp) > Number(item.price) && <span className="text-[10px] text-muted-foreground line-through">₹{Number(item.mrp)}</span>}
                       </div>
                       <div className="flex items-center justify-between w-full">
-                        <span className="text-[10px] text-muted-foreground">Stock: {Number(item.stock)}</span>
+                        <span className="text-[10px] text-muted-foreground">{displayStock(item)}</span>
                         {item.unit && <span className="text-[10px] text-muted-foreground">/{item.unit}</span>}
                       </div>
                     </button>
@@ -440,12 +475,31 @@ export default function POS() {
             )}
           </div>
 
-          {/* Totals */}
+          {/* Totals with Discount */}
           <div className="border-t border-border p-4 space-y-2 bg-card/50 shrink-0">
             <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span className="text-foreground">₹{subtotal.toFixed(2)}</span></div>
+            
+            {/* Discount Row */}
+            {cart.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground shrink-0">Discount</span>
+                <div className="flex items-center gap-1 flex-1">
+                  <button onClick={() => setDiscountType(discountType === "amount" ? "percent" : "amount")} className="p-1 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation" title="Toggle % / ₹">
+                    {discountType === "percent" ? <Percent className="h-3 w-3" /> : <IndianRupee className="h-3 w-3" />}
+                  </button>
+                  <input type="number" value={discountValue || ""} onChange={e => setDiscountValue(parseFloat(e.target.value) || 0)} placeholder="0"
+                    className="w-16 px-2 py-1 rounded bg-muted border border-border text-sm text-foreground font-mono text-right focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                </div>
+                {billDiscount > 0 && <span className="text-sm text-success font-medium">-₹{billDiscount.toFixed(0)}</span>}
+              </div>
+            )}
+            
             <div className="flex justify-between text-sm"><span className="text-muted-foreground">GST</span><span className="text-foreground">₹{gstTotal.toFixed(2)}</span></div>
+            {Math.abs(roundOff) > 0.001 && (
+              <div className="flex justify-between text-xs"><span className="text-muted-foreground">Round Off</span><span className="text-muted-foreground">{roundOff > 0 ? "+" : ""}₹{roundOff.toFixed(2)}</span></div>
+            )}
             <div className="h-px bg-border" />
-            <div className="flex justify-between text-lg font-bold"><span className="text-foreground">Total</span><span className="text-gradient-primary">₹{grandTotal.toFixed(2)}</span></div>
+            <div className="flex justify-between text-lg font-bold"><span className="text-foreground">Total</span><span className="text-gradient-primary">₹{roundedTotal}</span></div>
 
             <div className="grid grid-cols-4 gap-2 pt-2">
               <button onClick={holdBill} disabled={cart.length === 0} className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium bg-muted text-muted-foreground hover:bg-muted/80 disabled:opacity-40 touch-manipulation">
@@ -497,7 +551,14 @@ export default function POS() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowPayment(false)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 animate-fade-in max-h-[90vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-foreground mb-1">Payment</h3>
-            <p className="text-3xl font-bold text-gradient-primary text-center my-4">₹{grandTotal.toFixed(2)}</p>
+            <p className="text-3xl font-bold text-gradient-primary text-center my-4">₹{roundedTotal}</p>
+            
+            {billDiscount > 0 && (
+              <div className="text-center text-xs text-success mb-2">Discount: ₹{billDiscount.toFixed(0)} ({discountType === "percent" ? `${discountValue}%` : "flat"})</div>
+            )}
+            {Math.abs(roundOff) > 0.001 && (
+              <div className="text-center text-[10px] text-muted-foreground mb-2">Round off: {roundOff > 0 ? "+" : ""}₹{roundOff.toFixed(2)}</div>
+            )}
 
             <div className="space-y-3 mb-4">
               {paymentLines.map((line, idx) => (
@@ -523,13 +584,13 @@ export default function POS() {
               <Plus className="h-3.5 w-3.5" /> Add Payment Method
             </button>
 
-            <div className="flex justify-between text-sm mb-1"><span className="text-muted-foreground">Total Paid</span><span className={`font-semibold ${totalPaid >= grandTotal ? "text-success" : "text-destructive"}`}>₹{totalPaid.toFixed(2)}</span></div>
+            <div className="flex justify-between text-sm mb-1"><span className="text-muted-foreground">Total Paid</span><span className={`font-semibold ${totalPaid >= roundedTotal ? "text-success" : "text-destructive"}`}>₹{totalPaid.toFixed(2)}</span></div>
             {remaining > 0.01 && <div className="flex justify-between text-sm mb-4"><span className="text-muted-foreground">Remaining</span><span className="font-semibold text-destructive">₹{remaining.toFixed(2)}</span></div>}
-            {totalPaid > grandTotal + 0.01 && <div className="flex justify-between text-sm mb-4"><span className="text-muted-foreground">Change</span><span className="font-semibold text-success">₹{(totalPaid - grandTotal).toFixed(2)}</span></div>}
+            {totalPaid > roundedTotal + 0.01 && <div className="flex justify-between text-sm mb-4"><span className="text-muted-foreground">Change</span><span className="font-semibold text-success">₹{(totalPaid - roundedTotal).toFixed(2)}</span></div>}
 
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => setShowPayment(false)} className="py-3 rounded-lg text-sm font-medium bg-muted text-muted-foreground touch-manipulation">Cancel</button>
-              <button onClick={completeSale} disabled={totalPaid < grandTotal - 0.01} className="py-3 rounded-lg text-sm font-medium bg-success text-success-foreground hover:bg-success/90 disabled:opacity-40 touch-manipulation">Complete Sale</button>
+              <button onClick={completeSale} disabled={totalPaid < roundedTotal - 0.01} className="py-3 rounded-lg text-sm font-medium bg-success text-success-foreground hover:bg-success/90 disabled:opacity-40 touch-manipulation">Complete Sale</button>
             </div>
           </div>
         </div>
