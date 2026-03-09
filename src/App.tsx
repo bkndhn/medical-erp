@@ -26,6 +26,7 @@ import SuperAdmin from "./pages/SuperAdmin";
 import UserManagement from "./pages/UserManagement";
 import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
+import Install from "./pages/Install";
 
 const queryClient = new QueryClient();
 
