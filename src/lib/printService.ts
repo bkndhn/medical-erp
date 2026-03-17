@@ -23,7 +23,7 @@ export function savePrinterConfig(config: PrinterConfig) {
 }
 
 // Store persistent device reference
-let usbDevice: USBDevice | null = null;
+let usbDevice: any = null;
 let btCharacteristic: any = null;
 
 export async function connectUSBPrinter(): Promise<boolean> {
