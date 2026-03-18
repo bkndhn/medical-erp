@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff } from "lucide-react";
+import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
@@ -20,9 +20,8 @@ interface CartItem {
 }
 
 interface PaymentLine { mode: string; amount: number; }
-interface PaymentMethodConfig { code: string; name: string; icon: string; }
+interface PaymentMethodConfig { code: string; name: string; icon: string; is_default?: boolean; }
 
-const DEFAULT_PAYMENT_MODES = ["cash", "upi", "card", "credit"];
 const QUICK_QTYS = [1, 5, 10, 12, 20, 25, 50, 100];
 const PACK_UNITS = ["strip", "box", "bottle", "pack", "dozen"];
 const isPackUnit = (unit: string | null) => unit ? PACK_UNITS.includes(unit.toLowerCase()) : false;
@@ -36,6 +35,16 @@ const shortcutMap = [
   { key: 'F12', action: 'Print & Complete', category: 'Billing' },
   { key: 'Enter', action: 'Confirm Payment', category: 'Payment' },
   { key: '?', action: 'Shortcut Help', category: 'General' },
+];
+
+// Mobile shortcut buttons for touch devices
+const MOBILE_SHORTCUTS = [
+  { key: "F1", label: "Search", icon: "🔍", color: "bg-primary/15 text-primary" },
+  { key: "F6", label: "Hold", icon: "⏸", color: "bg-accent/15 text-accent" },
+  { key: "F8", label: "Reprint", icon: "🖨", color: "bg-muted text-muted-foreground" },
+  { key: "F9", label: "Pay", icon: "💳", color: "bg-success/15 text-success" },
+  { key: "F10", label: "Delete", icon: "🗑", color: "bg-destructive/15 text-destructive" },
+  { key: "F12", label: "Complete", icon: "✅", color: "bg-primary/15 text-primary" },
 ];
 
 export default function POS() {
@@ -62,9 +71,19 @@ export default function POS() {
   const barcodeTimer = useRef<any>(null);
 
   const [paymentModes, setPaymentModes] = useState<PaymentMethodConfig[]>([]);
+  const [defaultPaymentMode, setDefaultPaymentMode] = useState<string>("cash");
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([{ mode: "cash", amount: 0 }]);
   const [discountType, setDiscountType] = useState<"amount" | "percent">("amount");
   const [discountValue, setDiscountValue] = useState<number>(0);
+
+  // Customer info for bill
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [whatsappShare, setWhatsappShare] = useState(() => localStorage.getItem("pos_whatsapp_share") === "true");
+
+  // Mobile shortcuts visibility
+  const [showMobileShortcuts, setShowMobileShortcuts] = useState(false);
 
   // Online/offline detection
   useEffect(() => {
@@ -113,17 +132,27 @@ export default function POS() {
         setItems(itemsData);
         setCategories(catsData);
         setBillCount((count || 0) + 1);
-        // Cache for offline
         cacheItems(itemsData);
         cacheCategories(catsData);
         if (pm && pm.length > 0) {
-          setPaymentModes((pm as any).map((p: any) => ({ code: p.code, name: p.name, icon: p.icon })));
+          const modes = (pm as any).map((p: any) => ({ code: p.code, name: p.name, icon: p.icon, is_default: p.sort_order === 0 }));
+          setPaymentModes(modes);
+          // Find default from localStorage or first active
+          const savedDefault = localStorage.getItem("pos_default_payment");
+          const defaultMode = savedDefault && modes.find((m: any) => m.code === savedDefault) ? savedDefault : modes[0]?.code || "cash";
+          setDefaultPaymentMode(defaultMode);
         } else {
-          setPaymentModes(DEFAULT_PAYMENT_MODES.map(m => ({ code: m, name: m.toUpperCase(), icon: "💳" })));
+          const fallback = [
+            { code: "cash", name: "Cash", icon: "💵" },
+            { code: "upi", name: "UPI", icon: "📱" },
+            { code: "card", name: "Card", icon: "💳" },
+            { code: "credit", name: "Credit", icon: "📋" },
+          ];
+          setPaymentModes(fallback);
+          setDefaultPaymentMode("cash");
         }
         syncPendingSales();
       } catch {
-        // Offline fallback
         const cached = await getCachedItems();
         const cachedCats = await getCachedCategories();
         if (cached.length > 0) {
@@ -138,37 +167,26 @@ export default function POS() {
 
   const billNo = `INV-${String(billCount).padStart(4, "0")}`;
 
-  // Barcode scanner handler - captures rapid key sequences
+  // Barcode scanner handler
   useEffect(() => {
     const handleBarcodeScan = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      // Skip if in a non-search input
       if ((target.tagName === "INPUT" || target.tagName === "TEXTAREA") && target !== searchRef.current) return;
-
       if (e.key === "Enter" && barcodeBuffer.current.length >= 3) {
         e.preventDefault();
         const barcode = barcodeBuffer.current;
         barcodeBuffer.current = "";
-        // Find item by barcode
         const item = items.find(i => i.barcode === barcode || i.sku === barcode);
-        if (item) {
-          addToCart(item);
-          toast.success(`Scanned: ${item.name}`);
-        } else {
-          toast.error(`No item found for barcode: ${barcode}`);
-          setSearchQuery(barcode);
-          searchRef.current?.focus();
-        }
+        if (item) { addToCart(item); toast.success(`Scanned: ${item.name}`); }
+        else { toast.error(`No item found for barcode: ${barcode}`); setSearchQuery(barcode); searchRef.current?.focus(); }
         return;
       }
-
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         barcodeBuffer.current += e.key;
         clearTimeout(barcodeTimer.current);
         barcodeTimer.current = setTimeout(() => { barcodeBuffer.current = ""; }, 100);
       }
     };
-
     window.addEventListener("keydown", handleBarcodeScan);
     return () => window.removeEventListener("keydown", handleBarcodeScan);
   }, [items]);
@@ -218,7 +236,7 @@ export default function POS() {
   };
 
   const removeItem = (id: string, isLoose?: boolean) => setCart(prev => prev.filter(i => !(i.item.id === id && !!i.isLoose === !!isLoose)));
-  const clearCart = () => { setCart([]); setDiscountValue(0); };
+  const clearCart = () => { setCart([]); setDiscountValue(0); setCustomerName(""); setCustomerPhone(""); };
 
   // Held bills
   const holdBill = async () => {
@@ -285,7 +303,7 @@ export default function POS() {
   const totalPaid = paymentLines.reduce((s, l) => s + l.amount, 0);
   const remaining = roundedTotal - totalPaid;
 
-  const addPaymentLine = () => setPaymentLines(prev => [...prev, { mode: "cash", amount: 0 }]);
+  const addPaymentLine = () => setPaymentLines(prev => [...prev, { mode: defaultPaymentMode, amount: 0 }]);
   const updatePaymentLine = (idx: number, field: keyof PaymentLine, value: any) => setPaymentLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l));
   const removePaymentLine = (idx: number) => { if (paymentLines.length <= 1) return; setPaymentLines(prev => prev.filter((_, i) => i !== idx)); };
   const fillRemaining = (idx: number) => {
@@ -294,8 +312,42 @@ export default function POS() {
   };
 
   const openPayment = () => {
-    setPaymentLines([{ mode: "cash", amount: roundedTotal }]);
+    setPaymentLines([{ mode: defaultPaymentMode, amount: roundedTotal }]);
     setShowPayment(true);
+  };
+
+  // Auto-save customer
+  const autoSaveCustomer = async (saleId: string) => {
+    if (!tenantId || (!customerName && !customerPhone)) return null;
+    try {
+      // Check if customer exists by phone
+      let customerId: string | null = null;
+      if (customerPhone) {
+        const { data: existing } = await supabase.from("customers").select("id").eq("tenant_id", tenantId).eq("phone", customerPhone).single();
+        if (existing) {
+          customerId = existing.id;
+        }
+      }
+      if (!customerId && customerName) {
+        const { data: newCust } = await supabase.from("customers").insert({
+          tenant_id: tenantId, name: customerName, phone: customerPhone || null,
+        } as any).select("id").single();
+        customerId = newCust?.id || null;
+      }
+      if (customerId && saleId) {
+        await supabase.from("sales").update({ customer_id: customerId } as any).eq("id", saleId);
+      }
+      return customerId;
+    } catch { return null; }
+  };
+
+  // WhatsApp share
+  const shareOnWhatsApp = (sale: any) => {
+    if (!customerPhone) return;
+    const phone = customerPhone.startsWith("+") ? customerPhone.replace(/\D/g, "") : `91${customerPhone.replace(/\D/g, "")}`;
+    const itemsText = cart.map(ci => `${ci.isLoose ? ci.item.name + " (L)" : ci.item.name} x${ci.quantity} = ₹${ci.total.toFixed(0)}`).join("\n");
+    const msg = `🧾 *${billNo}*\n${new Date().toLocaleString()}\n\n${itemsText}\n\n*Total: ₹${roundedTotal}*\nPayment: ${paymentLines.map(l => `${l.mode.toUpperCase()} ₹${l.amount}`).join(", ")}\n\nThank you! 🙏`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
   // INSTANT complete sale
@@ -314,6 +366,7 @@ export default function POS() {
       invoice_number: billNo, subtotal, discount: billDiscount, tax_total: gstTotal,
       grand_total: roundedTotal, payment_mode: primaryMode as any,
       amount_paid: totalPaid, change_amount: changeAmount, status: "completed" as any,
+      notes: customerName ? `Customer: ${customerName}${customerPhone ? ` (${customerPhone})` : ""}` : null,
     };
 
     const saleItemsData = cart.map(i => ({
@@ -322,15 +375,29 @@ export default function POS() {
       tax_amount: i.total * (Number(i.item.gst_rate) || 0) / 100, total: i.total,
     }));
 
-    // INSTANT: clear cart immediately for next bill
+    // Save for WhatsApp
     const savedCart = [...cart];
     const savedBillNo = billNo;
+    const savedCustomerPhone = customerPhone;
+    const savedWhatsappShare = whatsappShare;
+
+    // INSTANT: clear cart immediately
     setCart([]); setShowPayment(false); setDiscountValue(0);
     setBillCount(prev => prev + 1);
     setIsSaving(false);
 
     const modeStr = isSplit ? paymentLines.filter(l => l.amount > 0).map(l => `₹${l.amount} ${l.mode.toUpperCase()}`).join(" + ") : primaryMode.toUpperCase();
     toast.success(`${savedBillNo} • ₹${roundedTotal} via ${modeStr}`);
+
+    // WhatsApp share
+    if (savedWhatsappShare && savedCustomerPhone) {
+      const phone = savedCustomerPhone.startsWith("+") ? savedCustomerPhone.replace(/\D/g, "") : `91${savedCustomerPhone.replace(/\D/g, "")}`;
+      const itemsText = savedCart.map(ci => `${ci.isLoose ? ci.item.name + " (L)" : ci.item.name} x${ci.quantity} = ₹${ci.total.toFixed(0)}`).join("\n");
+      const msg = `🧾 *${savedBillNo}*\n${new Date().toLocaleString()}\n\n${itemsText}\n\n*Total: ₹${roundedTotal}*\nPayment: ${modeStr}\n\nThank you! 🙏`;
+      window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
+    }
+
+    setCustomerName(""); setCustomerPhone("");
 
     // Background save
     try {
@@ -362,13 +429,16 @@ export default function POS() {
         } as any);
       }
 
-      // Auto-print if enabled
+      // Auto-save customer
+      await autoSaveCustomer(sale.id);
+
+      // Auto-print
       const config = getPrinterConfig();
       if (config.enabled && config.autoPrint) {
         printReceipt(sale, itemsWithSaleId);
       }
 
-      // Refresh items in background
+      // Refresh items
       const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
       if (it) { setItems(it as unknown as Item[]); cacheItems(it); }
     } catch (err: any) {
@@ -376,30 +446,30 @@ export default function POS() {
     }
   };
 
-  // Fetch past bills for reprint / delete
+  // Fetch past bills - NO LIMIT for delete (show ALL today's bills)
   const fetchPastBills = async (forDelete = false) => {
     if (!tenantId) return;
-    let query = supabase.from("sales").select("*").eq("tenant_id", tenantId).eq("status", "completed").order("created_at", { ascending: false }).limit(50);
+    let query = supabase.from("sales").select("*").eq("tenant_id", tenantId).eq("status", "completed").order("created_at", { ascending: false });
     if (forDelete) {
       const today = new Date(); today.setHours(0, 0, 0, 0);
       query = query.gte("created_at", today.toISOString());
+      // No limit for today's bills
+    } else {
+      query = query.limit(50);
     }
     const { data } = await query;
     setPastBills((data as any) || []);
   };
 
-  // Reprint a past bill
   const reprintBill = async (sale: any) => {
     const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
     printReceipt(sale, items || []);
     setShowReprint(false);
   };
 
-  // Delete today's bill
   const deleteTodayBill = async (sale: any) => {
     if (!confirm(`Delete bill ${sale.invoice_number}? This cannot be undone.`)) return;
     try {
-      // Restore stock
       const { data: saleItems } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
       if (saleItems) {
         for (const si of saleItems) {
@@ -411,16 +481,26 @@ export default function POS() {
           }
         }
       }
-      // Delete payments
       await supabase.from("payments").delete().eq("sale_id", sale.id);
-      // Update sale to cancelled
       await supabase.from("sales").update({ status: "cancelled" as any } as any).eq("id", sale.id);
       toast.success(`Bill ${sale.invoice_number} deleted`);
       fetchPastBills(true);
-      // Refresh items
       const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
       if (it) { setItems(it as unknown as Item[]); cacheItems(it); }
     } catch (err: any) { toast.error(err.message); }
+  };
+
+  // Mobile shortcut handler
+  const handleMobileShortcut = (key: string) => {
+    switch (key) {
+      case "F1": searchRef.current?.focus(); break;
+      case "F6": holdBill(); break;
+      case "F8": fetchPastBills(); setShowReprint(true); break;
+      case "F9": cart.length > 0 && openPayment(); break;
+      case "F10": fetchPastBills(true); setShowDeleteBill(true); break;
+      case "F12": if (cart.length > 0 && !showPayment) openPayment(); else if (showPayment) completeSale(); break;
+    }
+    setShowMobileShortcuts(false);
   };
 
   usePOSShortcuts({
@@ -434,7 +514,6 @@ export default function POS() {
     onPrintComplete: () => { if (cart.length > 0 && !showPayment) openPayment(); else if (showPayment) completeSale(); },
   });
 
-  // F10 for delete today's bill
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "F10") { e.preventDefault(); fetchPastBills(true); setShowDeleteBill(true); }
@@ -454,15 +533,10 @@ export default function POS() {
     return `${stock % 1 === 0 ? stock : stock.toFixed(2)}`;
   };
 
-  // Manual barcode input handler
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && searchQuery.trim()) {
       const item = items.find(i => i.barcode === searchQuery.trim() || i.sku === searchQuery.trim());
-      if (item) {
-        addToCart(item);
-        toast.success(`Added: ${item.name}`);
-        setSearchQuery("");
-      }
+      if (item) { addToCart(item); toast.success(`Added: ${item.name}`); setSearchQuery(""); }
     }
   };
 
@@ -478,10 +552,25 @@ export default function POS() {
         </div>
         <div className="flex items-center gap-1">
           <button onClick={() => { fetchPastBills(); setShowReprint(true); }} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Reprint (F8)"><Printer className="h-4 w-4" /></button>
-          <button onClick={() => setShowShortcuts(true)} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Shortcuts"><Keyboard className="h-4 w-4" /></button>
-          <button className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"><Maximize className="h-4 w-4" /></button>
+          {/* Mobile shortcuts toggle */}
+          <button onClick={() => setShowMobileShortcuts(!showMobileShortcuts)} className="md:hidden p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Quick Actions"><Keyboard className="h-4 w-4" /></button>
+          <button onClick={() => setShowShortcuts(true)} className="hidden md:block p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors" title="Shortcuts"><Keyboard className="h-4 w-4" /></button>
+          <button onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"><Maximize className="h-4 w-4" /></button>
         </div>
       </header>
+
+      {/* Mobile Quick Action Bar */}
+      {showMobileShortcuts && (
+        <div className="md:hidden flex gap-1.5 px-3 py-2 border-b border-border bg-card/30 overflow-x-auto scrollbar-thin shrink-0 animate-fade-in">
+          {MOBILE_SHORTCUTS.map(s => (
+            <button key={s.key} onClick={() => handleMobileShortcut(s.key)}
+              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg text-[10px] font-medium whitespace-nowrap ${s.color} border border-border/30 touch-manipulation min-w-[56px]`}>
+              <span className="text-base">{s.icon}</span>
+              <span>{s.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
         {/* Left: Products */}
@@ -561,6 +650,22 @@ export default function POS() {
                 )}
               </div>
             </div>
+            {/* Customer quick entry */}
+            <div className="flex items-center gap-2 mt-2">
+              <button onClick={() => setShowCustomerForm(!showCustomerForm)} className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all touch-manipulation ${customerName ? "bg-success/10 text-success border border-success/20" : "bg-muted text-muted-foreground border border-border/30"}`}>
+                <User className="h-3 w-3" /> {customerName || "Add Customer"}
+              </button>
+              <button onClick={() => { setWhatsappShare(!whatsappShare); localStorage.setItem("pos_whatsapp_share", (!whatsappShare).toString()); }}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all touch-manipulation ${whatsappShare ? "bg-success/10 text-success border border-success/20" : "bg-muted text-muted-foreground border border-border/30"}`}>
+                <MessageSquare className="h-3 w-3" /> WA
+              </button>
+            </div>
+            {showCustomerForm && (
+              <div className="flex gap-2 mt-2 animate-fade-in">
+                <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Name" className="flex-1 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Phone" className="w-28 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50" />
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -673,6 +778,14 @@ export default function POS() {
             <p className="text-3xl font-bold text-gradient-primary text-center my-4">₹{roundedTotal}</p>
             {billDiscount > 0 && <div className="text-center text-xs text-success mb-2">Discount: ₹{billDiscount.toFixed(0)}</div>}
 
+            {/* Customer info in payment */}
+            {!customerName && (
+              <div className="flex gap-2 mb-4 p-3 rounded-lg bg-muted/30 border border-border/50">
+                <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Customer name (optional)" className="flex-1 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Phone" className="w-28 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50" />
+              </div>
+            )}
+
             <div className="space-y-3 mb-4">
               {paymentLines.map((line, idx) => (
                 <div key={idx} className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
@@ -699,6 +812,15 @@ export default function POS() {
 
             <div className="flex justify-between text-sm mb-1"><span className="text-muted-foreground">Total Paid</span><span className={`font-semibold ${totalPaid >= roundedTotal ? "text-success" : "text-destructive"}`}>₹{totalPaid.toFixed(2)}</span></div>
             {totalPaid > roundedTotal + 0.01 && <div className="flex justify-between text-sm mb-4"><span className="text-muted-foreground">Change</span><span className="font-semibold text-success">₹{(totalPaid - roundedTotal).toFixed(2)}</span></div>}
+
+            {/* WhatsApp toggle */}
+            <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/50 mb-4">
+              <span className="text-xs text-muted-foreground flex items-center gap-1"><MessageSquare className="h-3 w-3" /> Share via WhatsApp</span>
+              <button onClick={() => { setWhatsappShare(!whatsappShare); localStorage.setItem("pos_whatsapp_share", (!whatsappShare).toString()); }}
+                className={`px-3 py-1 rounded text-[10px] font-medium ${whatsappShare ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+                {whatsappShare ? "ON" : "OFF"}
+              </button>
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => setShowPayment(false)} className="py-3 rounded-lg text-sm font-medium bg-muted text-muted-foreground touch-manipulation">Cancel</button>
@@ -737,7 +859,7 @@ export default function POS() {
         </div>
       )}
 
-      {/* Delete Today's Bill Modal (F10) */}
+      {/* Delete Today's Bill Modal (F10) - shows ALL today's bills */}
       {showDeleteBill && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowDeleteBill(false)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto scrollbar-thin animate-fade-in" onClick={e => e.stopPropagation()}>
@@ -745,7 +867,8 @@ export default function POS() {
               <h3 className="text-lg font-bold text-foreground">Delete Today's Bill (F10)</h3>
               <button onClick={() => setShowDeleteBill(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            <p className="text-xs text-destructive mb-4">⚠️ Only today's bills can be deleted. Stock will be restored.</p>
+            <p className="text-xs text-destructive mb-2">⚠️ Only today's bills can be deleted. Stock will be restored.</p>
+            <p className="text-xs text-muted-foreground mb-4">{pastBills.length} bills today</p>
             {pastBills.length === 0 ? <p className="text-center text-muted-foreground py-8">No bills today</p> : (
               <div className="space-y-2">
                 {pastBills.map(bill => (
