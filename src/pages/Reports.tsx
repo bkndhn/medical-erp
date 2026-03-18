@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt } from "lucide-react";
+import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
+import { printReceipt } from "@/lib/printService";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
-const TABS = ["overview", "stock", "sales", "gst", "expiry", "devices"] as const;
+const TABS = ["overview", "bills", "stock", "sales", "gst", "expiry", "devices"] as const;
 type Tab = typeof TABS[number];
 
 export default function Reports() {
@@ -22,6 +23,11 @@ export default function Reports() {
   const [tab, setTab] = useState<Tab>("overview");
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
+
+  // Bill detail view
+  const [selectedBill, setSelectedBill] = useState<any>(null);
+  const [billItems, setBillItems] = useState<any[]>([]);
+  const [loadingBillItems, setLoadingBillItems] = useState(false);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -104,7 +110,6 @@ export default function Reports() {
     return Object.values(map).sort((a, b) => b.revenue - a.revenue);
   }, [saleItems, items]);
 
-  // GST-wise report - grouped by GST rate
   const gstWiseReport = useMemo(() => {
     const map: Record<string, { rate: number; taxableValue: number; cgst: number; sgst: number; igst: number; totalTax: number; items: number }> = {};
     saleItems.forEach(si => {
@@ -144,39 +149,48 @@ export default function Reports() {
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [filteredSales, devices]);
 
+  // View bill detail
+  const viewBill = async (sale: any) => {
+    setSelectedBill(sale);
+    setLoadingBillItems(true);
+    const { data } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
+    setBillItems((data as any) || []);
+    setLoadingBillItems(false);
+  };
+
+  const printBill = () => {
+    if (!selectedBill) return;
+    printReceipt(selectedBill, billItems);
+  };
+
+  const shareOnWhatsApp = () => {
+    if (!selectedBill) return;
+    const itemsText = billItems.map(si => `${si.item_name} x${si.quantity} = ₹${Number(si.total).toFixed(0)}`).join("\n");
+    const msg = `🧾 *${selectedBill.invoice_number}*\n${new Date(selectedBill.created_at).toLocaleString()}\n\n${itemsText}\n\n*Total: ₹${Number(selectedBill.grand_total).toFixed(0)}*\nPayment: ${selectedBill.payment_mode.toUpperCase()}\n\nThank you! 🙏`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
   const handleExportExcel = () => {
-    if (tab === "gst") {
-      exportToExcel(gstWiseReport.map(g => ({ "GST Rate": `${g.rate}%`, "Taxable Value": g.taxableValue.toFixed(2), "CGST": g.cgst.toFixed(2), "SGST": g.sgst.toFixed(2), "Total Tax": g.totalTax.toFixed(2), "Items": g.items })), "gst-report");
-    } else if (tab === "sales") {
-      exportToExcel(itemWiseSales.map(s => ({ Item: s.name, Qty: s.qty, Revenue: s.revenue.toFixed(2) })), "sales-report");
-    } else if (tab === "stock") {
-      exportToExcel(items.map(i => ({ Name: i.name, Stock: Number(i.stock), Price: Number(i.price), Unit: i.unit || "pcs" })), "stock-report");
-    } else if (tab === "expiry") {
-      exportToExcel(expiryItems.map(i => ({ Name: i.name, Batch: i.batch_number || "", Expiry: i.expiry_date, DaysLeft: i.daysLeft, Stock: Number(i.stock) })), "expiry-report");
-    } else if (tab === "devices") {
-      exportToExcel(deviceWiseSales.map(d => ({ Device: d.name, Orders: d.count, Total: d.total.toFixed(2) })), "device-sales");
-    } else {
-      exportToExcel(filteredSales.map(s => ({ Invoice: s.invoice_number, Date: new Date(s.created_at).toLocaleDateString(), Payment: s.payment_mode, Amount: Number(s.grand_total).toFixed(2) })), "overview-report");
-    }
+    if (tab === "gst") exportToExcel(gstWiseReport.map(g => ({ "GST Rate": `${g.rate}%`, "Taxable Value": g.taxableValue.toFixed(2), "CGST": g.cgst.toFixed(2), "SGST": g.sgst.toFixed(2), "Total Tax": g.totalTax.toFixed(2), "Items": g.items })), "gst-report");
+    else if (tab === "sales") exportToExcel(itemWiseSales.map(s => ({ Item: s.name, Qty: s.qty, Revenue: s.revenue.toFixed(2) })), "sales-report");
+    else if (tab === "stock") exportToExcel(items.map(i => ({ Name: i.name, Stock: Number(i.stock), Price: Number(i.price), Unit: i.unit || "pcs" })), "stock-report");
+    else if (tab === "bills") exportToExcel(filteredSales.map(s => ({ Invoice: s.invoice_number, Date: new Date(s.created_at).toLocaleDateString(), Payment: s.payment_mode, Status: s.status, Amount: Number(s.grand_total).toFixed(2) })), "bills");
+    else if (tab === "expiry") exportToExcel(expiryItems.map(i => ({ Name: i.name, Batch: i.batch_number || "", Expiry: i.expiry_date, DaysLeft: i.daysLeft, Stock: Number(i.stock) })), "expiry-report");
+    else if (tab === "devices") exportToExcel(deviceWiseSales.map(d => ({ Device: d.name, Orders: d.count, Total: d.total.toFixed(2) })), "device-sales");
+    else exportToExcel(filteredSales.map(s => ({ Invoice: s.invoice_number, Date: new Date(s.created_at).toLocaleDateString(), Payment: s.payment_mode, Amount: Number(s.grand_total).toFixed(2) })), "overview-report");
   };
 
   const handleExportPDF = () => {
-    if (tab === "gst") {
-      exportToPDF("GST Report", ["Rate", "Taxable", "CGST", "SGST", "Total Tax", "Items"], gstWiseReport.map(g => [`${g.rate}%`, `₹${g.taxableValue.toFixed(0)}`, `₹${g.cgst.toFixed(0)}`, `₹${g.sgst.toFixed(0)}`, `₹${g.totalTax.toFixed(0)}`, String(g.items)]));
-    } else if (tab === "sales") {
-      exportToPDF("Sales Report", ["Item", "Qty", "Revenue"], itemWiseSales.map(s => [s.name, String(s.qty), `₹${s.revenue.toFixed(0)}`]));
-    } else if (tab === "stock") {
-      exportToPDF("Stock Report", ["Name", "Stock", "Price"], items.map(i => [i.name, String(Number(i.stock)), `₹${Number(i.price)}`]));
-    } else if (tab === "expiry") {
-      exportToPDF("Expiry Report", ["Name", "Batch", "Expiry", "Days Left"], expiryItems.map(i => [i.name, i.batch_number || "—", i.expiry_date, i.expired ? "EXPIRED" : `${i.daysLeft}d`]));
-    } else {
-      exportToPDF("Overview Report", ["Invoice", "Date", "Payment", "Amount"], filteredSales.map(s => [s.invoice_number, new Date(s.created_at).toLocaleDateString(), s.payment_mode, `₹${Number(s.grand_total).toFixed(0)}`]));
-    }
+    if (tab === "gst") exportToPDF("GST Report", ["Rate", "Taxable", "CGST", "SGST", "Total Tax", "Items"], gstWiseReport.map(g => [`${g.rate}%`, `₹${g.taxableValue.toFixed(0)}`, `₹${g.cgst.toFixed(0)}`, `₹${g.sgst.toFixed(0)}`, `₹${g.totalTax.toFixed(0)}`, String(g.items)]));
+    else if (tab === "sales") exportToPDF("Sales Report", ["Item", "Qty", "Revenue"], itemWiseSales.map(s => [s.name, String(s.qty), `₹${s.revenue.toFixed(0)}`]));
+    else if (tab === "stock") exportToPDF("Stock Report", ["Name", "Stock", "Price"], items.map(i => [i.name, String(Number(i.stock)), `₹${Number(i.price)}`]));
+    else if (tab === "expiry") exportToPDF("Expiry Report", ["Name", "Batch", "Expiry", "Days Left"], expiryItems.map(i => [i.name, i.batch_number || "—", i.expiry_date, i.expired ? "EXPIRED" : `${i.daysLeft}d`]));
+    else exportToPDF("Overview Report", ["Invoice", "Date", "Payment", "Amount"], filteredSales.map(s => [s.invoice_number, new Date(s.created_at).toLocaleDateString(), s.payment_mode, `₹${Number(s.grand_total).toFixed(0)}`]));
   };
 
   const tooltipStyle = { backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' };
 
-  const tabIcons: Record<Tab, string> = { overview: "📊", stock: "📦", sales: "💰", gst: "🧾", expiry: "📅", devices: "🖥️" };
+  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", stock: "📦", sales: "💰", gst: "🧾", expiry: "📅", devices: "🖥️" };
 
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
@@ -229,6 +243,41 @@ export default function Reports() {
                   </div>
                 ) : <p className="text-muted-foreground text-center py-8">No data</p>}
               </div>
+            </div>
+          </>}
+
+          {/* Bills Tab - View individual bills with items */}
+          {tab === "bills" && <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Bills</p><p className="text-2xl font-bold text-foreground mt-1">{filteredSales.length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Revenue</p><p className="text-2xl font-bold text-primary mt-1">₹{totalSales.toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Discount Given</p><p className="text-2xl font-bold text-accent mt-1">₹{totalDiscount.toLocaleString()}</p></div>
+            </div>
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" /> All Bills</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">Invoice</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground">Date</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground">Payment</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground">Status</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Amount</th>
+                    <th className="text-center py-2 text-xs text-muted-foreground">View</th>
+                  </tr></thead>
+                  <tbody>{filteredSales.map(s => (
+                    <tr key={s.id} className="border-b border-border/30 hover:bg-muted/20 cursor-pointer" onClick={() => viewBill(s)}>
+                      <td className="py-2 font-mono text-xs text-primary">{s.invoice_number}</td>
+                      <td className="py-2 text-xs text-muted-foreground">{new Date(s.created_at).toLocaleString()}</td>
+                      <td className="py-2"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{s.payment_mode}</span></td>
+                      <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${s.status === "completed" ? "bg-success/10 text-success" : s.status === "cancelled" ? "bg-destructive/10 text-destructive" : "bg-accent/10 text-accent"}`}>{s.status}</span></td>
+                      <td className="py-2 text-right font-semibold text-foreground">₹{Number(s.grand_total).toFixed(0)}</td>
+                      <td className="py-2 text-center"><Eye className="h-4 w-4 text-muted-foreground inline hover:text-primary" /></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              {filteredSales.length === 0 && <p className="text-muted-foreground text-center py-8">No bills found</p>}
             </div>
           </>}
 
@@ -308,7 +357,7 @@ export default function Reports() {
             </div>
           </>}
 
-          {/* GST Report Tab */}
+          {/* GST */}
           {tab === "gst" && <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Taxable</p><p className="text-2xl font-bold text-foreground mt-1">₹{gstWiseReport.reduce((s, g) => s + g.taxableValue, 0).toLocaleString()}</p></div>
@@ -339,7 +388,6 @@ export default function Reports() {
                         <td className="py-2 text-right font-semibold text-primary">₹{g.totalTax.toFixed(0)}</td>
                       </tr>
                     ))}
-                    {/* Total row */}
                     <tr className="border-t-2 border-border font-bold">
                       <td className="py-2 text-foreground">TOTAL</td>
                       <td className="py-2 text-right text-foreground">{gstWiseReport.reduce((s, g) => s + g.items, 0)}</td>
@@ -353,7 +401,6 @@ export default function Reports() {
               </div>
               {gstWiseReport.length === 0 && <p className="text-muted-foreground text-center py-8">No GST data available</p>}
             </div>
-            {/* GST chart */}
             {gstWiseReport.length > 0 && (
               <div className="glass-card rounded-xl p-5">
                 <h3 className="text-sm font-semibold text-foreground mb-4">Tax Collection by Rate</h3>
@@ -420,6 +467,65 @@ export default function Reports() {
           </>}
         </>}
       </div>
+
+      {/* Bill Detail Modal */}
+      {selectedBill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setSelectedBill(null)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto scrollbar-thin animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">{selectedBill.invoice_number}</h3>
+                <p className="text-xs text-muted-foreground">{new Date(selectedBill.created_at).toLocaleString()}</p>
+              </div>
+              <button onClick={() => setSelectedBill(null)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+
+            <div className="flex items-center gap-2 mb-4">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${selectedBill.status === "completed" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>{selectedBill.status}</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{selectedBill.payment_mode}</span>
+            </div>
+
+            {loadingBillItems ? <div className="text-center text-muted-foreground py-8">Loading items...</div> : (
+              <table className="w-full text-sm mb-4">
+                <thead><tr className="border-b border-border">
+                  <th className="text-left py-2 text-xs text-muted-foreground">Item</th>
+                  <th className="text-right py-2 text-xs text-muted-foreground">Qty</th>
+                  <th className="text-right py-2 text-xs text-muted-foreground">Price</th>
+                  <th className="text-right py-2 text-xs text-muted-foreground">Total</th>
+                </tr></thead>
+                <tbody>
+                  {billItems.map(si => (
+                    <tr key={si.id} className="border-b border-border/30">
+                      <td className="py-2 text-foreground text-xs">{si.item_name}</td>
+                      <td className="py-2 text-right text-muted-foreground text-xs">{si.quantity}</td>
+                      <td className="py-2 text-right text-muted-foreground text-xs">₹{Number(si.unit_price).toFixed(2)}</td>
+                      <td className="py-2 text-right font-medium text-foreground text-xs">₹{Number(si.total).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <div className="space-y-1 border-t border-border pt-3">
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span className="text-foreground">₹{Number(selectedBill.subtotal).toFixed(2)}</span></div>
+              {Number(selectedBill.discount || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Discount</span><span className="text-success">-₹{Number(selectedBill.discount).toFixed(2)}</span></div>}
+              <div className="flex justify-between text-sm"><span className="text-muted-foreground">GST</span><span className="text-foreground">₹{Number(selectedBill.tax_total || 0).toFixed(2)}</span></div>
+              <div className="h-px bg-border my-1" />
+              <div className="flex justify-between text-lg font-bold"><span className="text-foreground">Total</span><span className="text-primary">₹{Number(selectedBill.grand_total).toFixed(2)}</span></div>
+            </div>
+
+            {/* Print and WhatsApp share at bottom */}
+            <div className="flex gap-3 mt-4 pt-3 border-t border-border">
+              <button onClick={printBill} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 touch-manipulation">
+                <Printer className="h-4 w-4" /> Print
+              </button>
+              <button onClick={shareOnWhatsApp} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-success/10 text-success text-sm font-medium hover:bg-success/20 touch-manipulation">
+                <MessageSquare className="h-4 w-4" /> WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

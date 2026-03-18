@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor } from "lucide-react";
+import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check } from "lucide-react";
 import { toast } from "sonner";
 import { getPrinterConfig, savePrinterConfig, connectUSBPrinter, connectBluetoothPrinter, isUSBConnected, isBTConnected, type PrinterConfig } from "@/lib/printService";
 
@@ -28,6 +28,7 @@ export default function Settings() {
   const [pmForm, setPmForm] = useState<Partial<PaymentMethod>>({ name: "", code: "", icon: "💳", is_active: true, sort_order: 0 });
   const [pmSaving, setPmSaving] = useState(false);
   const [printerConfig, setPrinterConfig] = useState<PrinterConfig>(getPrinterConfig());
+  const [defaultPayment, setDefaultPayment] = useState<string>(localStorage.getItem("pos_default_payment") || "cash");
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return (localStorage.getItem("app-theme") as "dark" | "light") || "dark";
@@ -92,6 +93,12 @@ export default function Settings() {
 
   const deletePm = async (id: string) => { if (!confirm("Delete?")) return; await supabase.from("payment_methods").delete().eq("id", id); toast.success("Deleted"); fetchPaymentMethods(); };
   const togglePm = async (pm: PaymentMethod) => { await supabase.from("payment_methods").update({ is_active: !pm.is_active }).eq("id", pm.id); fetchPaymentMethods(); };
+
+  const setAsDefault = (code: string) => {
+    setDefaultPayment(code);
+    localStorage.setItem("pos_default_payment", code);
+    toast.success(`${code.toUpperCase()} set as default payment`);
+  };
 
   const updatePrinterConfig = (updates: Partial<PrinterConfig>) => {
     const newConfig = { ...printerConfig, ...updates };
@@ -164,7 +171,7 @@ export default function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary" /> Payment Methods</h3>
-                <p className="text-xs text-muted-foreground mt-1">These appear in POS billing.</p>
+                <p className="text-xs text-muted-foreground mt-1">These appear in POS billing. Click ⭐ to set as default.</p>
               </div>
               <button onClick={() => { setPmForm({ name: "", code: "", icon: "💳", is_active: true, sort_order: paymentMethods.length }); setShowPmForm(true); }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
@@ -175,7 +182,16 @@ export default function Settings() {
               {paymentMethods.map(pm => (
                 <div key={pm.id} className={`glass-card rounded-xl p-4 flex items-center gap-3 transition-opacity ${!pm.is_active ? "opacity-50" : ""}`}>
                   <span className="text-2xl">{pm.icon}</span>
-                  <div className="flex-1 min-w-0"><h4 className="text-sm font-semibold text-foreground">{pm.name}</h4><p className="text-xs text-muted-foreground font-mono">{pm.code}</p></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-foreground">{pm.name}</h4>
+                      {defaultPayment === pm.code && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/15 text-primary">DEFAULT</span>}
+                    </div>
+                    <p className="text-xs text-muted-foreground font-mono">{pm.code}</p>
+                  </div>
+                  <button onClick={() => setAsDefault(pm.code)} className={`p-1.5 rounded hover:bg-primary/10 touch-manipulation ${defaultPayment === pm.code ? "text-primary" : "text-muted-foreground"}`} title="Set as default">
+                    {defaultPayment === pm.code ? <Check className="h-4 w-4" /> : <Star className="h-3.5 w-3.5" />}
+                  </button>
                   <button onClick={() => togglePm(pm)} className={`px-2 py-1 rounded text-[10px] font-medium ${pm.is_active ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>{pm.is_active ? "Active" : "Off"}</button>
                   <button onClick={() => { setPmForm(pm); setShowPmForm(true); }} className="p-1.5 rounded hover:bg-muted text-muted-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
                   <button onClick={() => deletePm(pm.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -189,8 +205,6 @@ export default function Settings() {
           <div className="space-y-4">
             <div className="glass-card rounded-xl p-5 space-y-4">
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Print Settings</h3>
-
-              {/* Enable/Disable */}
               <div className="flex items-center justify-between">
                 <div><p className="text-sm text-foreground">Enable Printing</p><p className="text-xs text-muted-foreground">Turn on/off bill printing</p></div>
                 <button onClick={() => updatePrinterConfig({ enabled: !printerConfig.enabled })}
@@ -198,8 +212,6 @@ export default function Settings() {
                   {printerConfig.enabled ? "Enabled" : "Disabled"}
                 </button>
               </div>
-
-              {/* Printer Type */}
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-2">Connection Type</p>
                 <div className="grid grid-cols-3 gap-2">
@@ -219,8 +231,6 @@ export default function Settings() {
                   ))}
                 </div>
               </div>
-
-              {/* Connect buttons */}
               {printerConfig.type === "usb" && (
                 <button onClick={handleConnectUSB} className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
                   {isUSBConnected() ? "✅ USB Connected — Reconnect" : "🔌 Connect USB Printer"}
@@ -231,8 +241,6 @@ export default function Settings() {
                   {isBTConnected() ? "✅ BT Connected — Reconnect" : "📡 Connect Bluetooth Printer"}
                 </button>
               )}
-
-              {/* Paper Width */}
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-2">Paper Width</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -244,8 +252,6 @@ export default function Settings() {
                   ))}
                 </div>
               </div>
-
-              {/* Auto print */}
               <div className="flex items-center justify-between">
                 <div><p className="text-sm text-foreground">Auto Print on Complete</p><p className="text-xs text-muted-foreground">Print receipt automatically after completing sale</p></div>
                 <button onClick={() => updatePrinterConfig({ autoPrint: !printerConfig.autoPrint })}
