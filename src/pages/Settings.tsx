@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check } from "lucide-react";
+import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store } from "lucide-react";
 import { toast } from "sonner";
 import { getPrinterConfig, savePrinterConfig, connectUSBPrinter, connectBluetoothPrinter, isUSBConnected, isBTConnected, type PrinterConfig } from "@/lib/printService";
 
@@ -16,19 +16,46 @@ const DEFAULT_METHODS = [
   { name: "Credit", code: "credit", icon: "📋" },
 ];
 
+export interface BusinessDetails {
+  storeName: string;
+  address: string;
+  phone: string;
+  email: string;
+  gstNumber: string;
+  fssaiNumber: string;
+  dlNumber: string;
+  tagline: string;
+}
+
+const BIZ_KEY = "business_details";
+
+export function getBusinessDetails(): BusinessDetails {
+  try {
+    const saved = localStorage.getItem(BIZ_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return { storeName: "", address: "", phone: "", email: "", gstNumber: "", fssaiNumber: "", dlNumber: "", tagline: "Thank you! Visit again." };
+}
+
+export function saveBusinessDetails(d: BusinessDetails) {
+  localStorage.setItem(BIZ_KEY, JSON.stringify(d));
+}
+
 export default function Settings() {
   const { user, profile, signOut, refreshProfile, tenantId } = useAuth();
   const [tenant, setTenant] = useState<any>(null);
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"profile" | "payments" | "appearance" | "printer">("profile");
+  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer">("profile");
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [showPmForm, setShowPmForm] = useState(false);
   const [pmForm, setPmForm] = useState<Partial<PaymentMethod>>({ name: "", code: "", icon: "💳", is_active: true, sort_order: 0 });
   const [pmSaving, setPmSaving] = useState(false);
   const [printerConfig, setPrinterConfig] = useState<PrinterConfig>(getPrinterConfig());
   const [defaultPayment, setDefaultPayment] = useState<string>(localStorage.getItem("pos_default_payment") || "cash");
+  const [biz, setBiz] = useState<BusinessDetails>(getBusinessDetails());
+  const [bizSaving, setBizSaving] = useState(false);
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return (localStorage.getItem("app-theme") as "dark" | "light") || "dark";
@@ -41,7 +68,15 @@ export default function Settings() {
 
   useEffect(() => {
     if (tenantId) {
-      supabase.from("tenants").select("*").eq("id", tenantId).single().then(({ data }) => setTenant(data));
+      supabase.from("tenants").select("*").eq("id", tenantId).single().then(({ data }) => {
+        setTenant(data);
+        // Auto-fill business details from tenant if empty
+        if (data && !biz.storeName) {
+          const newBiz = { ...biz, storeName: data.name || "", gstNumber: data.gst_number || "", phone: data.phone || "", email: data.email || "", address: data.address || "" };
+          setBiz(newBiz);
+          saveBusinessDetails(newBiz);
+        }
+      });
       fetchPaymentMethods();
     }
   }, [tenantId]);
@@ -66,6 +101,17 @@ export default function Settings() {
     if (error) toast.error(error.message);
     else { toast.success("Profile updated"); await refreshProfile(); }
     setSaving(false);
+  };
+
+  const handleSaveBiz = () => {
+    setBizSaving(true);
+    saveBusinessDetails(biz);
+    // Also update tenant record if possible
+    if (tenantId) {
+      supabase.from("tenants").update({ name: biz.storeName, gst_number: biz.gstNumber || null, phone: biz.phone || null, email: biz.email || null, address: biz.address || null }).eq("id", tenantId);
+    }
+    toast.success("Business details saved");
+    setBizSaving(false);
   };
 
   const savePm = async () => {
@@ -121,6 +167,7 @@ export default function Settings() {
 
   const tabs = [
     { id: "profile" as const, label: "Profile", icon: User },
+    { id: "business" as const, label: "Business", icon: Store },
     { id: "payments" as const, label: "Payments", icon: CreditCard },
     { id: "printer" as const, label: "Printer", icon: Printer },
     { id: "appearance" as const, label: "Theme", icon: Palette },
@@ -153,7 +200,7 @@ export default function Settings() {
             </div>
             {tenant && (
               <div className="glass-card rounded-xl p-5 space-y-3">
-                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Business</h3>
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Business Overview</h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div><p className="text-xs text-muted-foreground">Name</p><p className="font-medium text-foreground">{tenant.name}</p></div>
                   <div><p className="text-xs text-muted-foreground">Industry</p><p className="font-medium text-foreground capitalize">{tenant.industry}</p></div>
@@ -164,6 +211,34 @@ export default function Settings() {
             )}
             <button onClick={signOut} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-destructive/10 text-destructive text-sm font-medium hover:bg-destructive/20"><LogOut className="h-4 w-4" /> Sign Out</button>
           </>
+        )}
+
+        {tab === "business" && (
+          <div className="space-y-4">
+            <div className="glass-card rounded-xl p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Store className="h-4 w-4 text-primary" /> Business Details for Bills</h3>
+              <p className="text-xs text-muted-foreground">These details will appear on printed receipts, invoices and WhatsApp shares. Each business has its own isolated details.</p>
+              {[
+                { l: "Store / Business Name *", k: "storeName", ph: "My Store" },
+                { l: "Address", k: "address", ph: "123 Main St, City" },
+                { l: "Phone", k: "phone", ph: "+91 98765 43210" },
+                { l: "Email", k: "email", ph: "store@example.com" },
+                { l: "GST Number", k: "gstNumber", ph: "22AAAAA0000A1Z5" },
+                { l: "FSSAI / License No.", k: "fssaiNumber", ph: "Optional" },
+                { l: "Drug License No.", k: "dlNumber", ph: "Optional" },
+                { l: "Receipt Footer / Tagline", k: "tagline", ph: "Thank you! Visit again." },
+              ].map(({ l, k, ph }) => (
+                <div key={k}>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">{l}</label>
+                  <input type="text" value={(biz as any)[k] || ""} onChange={e => setBiz({ ...biz, [k]: e.target.value })} placeholder={ph}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                </div>
+              ))}
+              <button onClick={handleSaveBiz} disabled={bizSaving} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+                <Save className="h-4 w-4" /> {bizSaving ? "Saving..." : "Save Business Details"}
+              </button>
+            </div>
+          </div>
         )}
 
         {tab === "payments" && (
@@ -257,6 +332,13 @@ export default function Settings() {
                 <button onClick={() => updatePrinterConfig({ autoPrint: !printerConfig.autoPrint })}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${printerConfig.autoPrint ? "bg-success/10 text-success border border-success/30" : "bg-muted text-muted-foreground border border-border"}`}>
                   {printerConfig.autoPrint ? "On" : "Off"}
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div><p className="text-sm text-foreground">Show Print Dialog</p><p className="text-xs text-muted-foreground">Show browser print dialog before printing</p></div>
+                <button onClick={() => updatePrinterConfig({ showDialog: !printerConfig.showDialog })}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${printerConfig.showDialog ? "bg-success/10 text-success border border-success/30" : "bg-muted text-muted-foreground border border-border"}`}>
+                  {printerConfig.showDialog ? "On" : "Off"}
                 </button>
               </div>
             </div>
