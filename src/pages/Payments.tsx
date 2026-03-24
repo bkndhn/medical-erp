@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { CreditCard, Search } from "lucide-react";
+import { CreditCard, Search, Eye, X } from "lucide-react";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 export default function Payments() {
@@ -10,6 +10,7 @@ export default function Payments() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState<{ from: Date | null; to: Date | null }>({ from: null, to: null });
+  const [selectedPayment, setSelectedPayment] = useState<any>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -36,6 +37,17 @@ export default function Payments() {
 
   const total = filtered.reduce((s, p) => s + Number(p.amount), 0);
 
+  // Payment mode summary
+  const modeSummary = useMemo(() => {
+    const map: Record<string, { count: number; total: number }> = {};
+    filtered.forEach(p => {
+      const m = p.payment_mode || "unknown";
+      if (!map[m]) map[m] = { count: 0, total: 0 };
+      map[m].count++; map[m].total += Number(p.amount);
+    });
+    return Object.entries(map).map(([mode, d]) => ({ mode, ...d })).sort((a, b) => b.total - a.total);
+  }, [filtered]);
+
   const handleExportExcel = () => {
     exportToExcel(filtered.map(p => ({
       Date: new Date(p.created_at).toLocaleDateString(),
@@ -60,7 +72,7 @@ export default function Payments() {
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
         <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2 ml-10 md:ml-0">
           <CreditCard className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Payments
@@ -76,6 +88,19 @@ export default function Payments() {
         </div>
       </header>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-4 sm:p-6">
+        {/* Mode summary cards */}
+        {modeSummary.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            {modeSummary.map(m => (
+              <div key={m.mode} className="glass-card rounded-xl p-4">
+                <p className="text-xs text-muted-foreground uppercase">{m.mode}</p>
+                <p className="text-xl font-bold text-primary mt-1">₹{m.total.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">{m.count} txns</p>
+              </div>
+            ))}
+          </div>
+        )}
+
         {loading ? <div className="text-center text-muted-foreground py-12">Loading...</div> :
         filtered.length === 0 ? <div className="flex flex-col items-center justify-center h-64 text-muted-foreground"><CreditCard className="h-12 w-12 mb-3 opacity-30" /><p>No payments found</p></div> :
         <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border">
@@ -87,10 +112,10 @@ export default function Payments() {
         </tr></thead><tbody>
           {filtered.map(p => (
             <tr key={p.id} className="border-b border-border/30 hover:bg-muted/20">
-              <td className="py-3 px-3 text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</td>
+              <td className="py-3 px-3 text-muted-foreground text-xs">{new Date(p.created_at).toLocaleString()}</td>
               <td className="py-3 px-3"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-primary/10 text-primary uppercase">{p.payment_mode}</span></td>
               <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{p.reference_number || "—"}</td>
-              <td className="py-3 px-3 text-muted-foreground">{p.notes || "—"}</td>
+              <td className="py-3 px-3 text-muted-foreground text-xs">{p.notes || "—"}</td>
               <td className="py-3 px-3 text-right font-semibold text-foreground">₹{Number(p.amount).toFixed(0)}</td>
             </tr>
           ))}
