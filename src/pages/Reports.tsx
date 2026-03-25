@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare, Search, CreditCard } from "lucide-react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
+import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare, Search, CreditCard, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from "recharts";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 import { printReceipt, generateWhatsAppText } from "@/lib/printService";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
-const TABS = ["overview", "bills", "stock", "sales", "gst", "payments", "expiry", "devices"] as const;
+const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices"] as const;
 type Tab = typeof TABS[number];
 
 export default function Reports() {
@@ -26,7 +26,6 @@ export default function Reports() {
   const [dateTo, setDateTo] = useState<Date | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Bill detail view
   const [selectedBill, setSelectedBill] = useState<any>(null);
   const [billItems, setBillItems] = useState<any[]>([]);
   const [loadingBillItems, setLoadingBillItems] = useState(false);
@@ -50,56 +49,46 @@ export default function Reports() {
     });
   }, [tenantId]);
 
-  const filteredSales = useMemo(() => {
-    let result = sales;
-    if (dateFrom) {
-      result = result.filter(s => {
-        const d = new Date(s.created_at);
-        if (d < dateFrom) return false;
-        if (dateTo && d > dateTo) return false;
-        return true;
-      });
-    }
-    return result;
-  }, [sales, dateFrom, dateTo]);
-
-  // Filter sale items based on filtered sales
-  const filteredSaleItems = useMemo(() => {
-    if (!dateFrom) return saleItems;
-    const saleIds = new Set(filteredSales.map(s => s.id));
-    return saleItems.filter(si => saleIds.has(si.sale_id));
-  }, [saleItems, filteredSales, dateFrom]);
-
-  // Global search across current tab data
-  const searchFilter = (text: string) => {
-    if (!searchQuery) return true;
-    return text.toLowerCase().includes(searchQuery.toLowerCase());
+  const filterByDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    if (dateFrom && d < dateFrom) return false;
+    if (dateTo && d > dateTo) return false;
+    return true;
   };
 
-  const totalSales = filteredSales.reduce((s, x) => s + Number(x.grand_total), 0);
-  const filteredExpenses = useMemo(() => {
-    if (!dateFrom) return expenses;
-    return expenses.filter(e => {
-      const d = new Date(e.created_at);
-      if (d < dateFrom) return false;
-      if (dateTo && d > dateTo) return false;
-      return true;
-    });
-  }, [expenses, dateFrom, dateTo]);
+  const filteredSales = useMemo(() => sales.filter(s => filterByDate(s.created_at)), [sales, dateFrom, dateTo]);
+  const filteredSaleItems = useMemo(() => {
+    const saleIds = new Set(filteredSales.map(s => s.id));
+    return saleItems.filter(si => saleIds.has(si.sale_id));
+  }, [saleItems, filteredSales]);
+  const filteredExpenses = useMemo(() => expenses.filter(e => filterByDate(e.expense_date || e.created_at)), [expenses, dateFrom, dateTo]);
+  const filteredPurchases = useMemo(() => purchases.filter(p => filterByDate(p.created_at)), [purchases, dateFrom, dateTo]);
+
+  const searchFilter = (text: string) => !searchQuery || text.toLowerCase().includes(searchQuery.toLowerCase());
+
+  const totalSales = filteredSales.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total), 0);
+  const totalRefunds = filteredSales.filter(s => s.status === "refunded").reduce((s, x) => s + Number(x.grand_total), 0);
+  const netSales = totalSales - totalRefunds;
   const totalExpenses = filteredExpenses.reduce((s, x) => s + Number(x.amount), 0);
   const totalDiscount = filteredSales.reduce((s, x) => s + Number(x.discount || 0), 0);
-  const totalTax = filteredSales.reduce((s, x) => s + Number(x.tax_total || 0), 0);
+  const totalTax = filteredSales.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.tax_total || 0), 0);
+  const totalPurchases = filteredPurchases.reduce((s, x) => s + Number(x.grand_total), 0);
+  const costOfGoods = filteredSaleItems.reduce((s, si) => {
+    const item = items.find(i => i.id === si.item_id);
+    return s + (Number(item?.cost_price || 0) * Number(si.quantity));
+  }, 0);
+  const grossProfit = netSales - costOfGoods;
+  const netProfit = netSales - totalExpenses - costOfGoods;
 
   const paymentData = useMemo(() => {
     const breakdown: Record<string, number> = {};
-    filteredSales.forEach(s => { breakdown[s.payment_mode] = (breakdown[s.payment_mode] || 0) + Number(s.grand_total); });
+    filteredSales.filter(s => s.status === "completed").forEach(s => { breakdown[s.payment_mode] = (breakdown[s.payment_mode] || 0) + Number(s.grand_total); });
     return Object.entries(breakdown).map(([name, value]) => ({ name, value }));
   }, [filteredSales]);
 
-  // Payment-wise detailed report
   const paymentWiseReport = useMemo(() => {
     const map: Record<string, { mode: string; count: number; total: number; avgBill: number }> = {};
-    filteredSales.forEach(s => {
+    filteredSales.filter(s => s.status === "completed").forEach(s => {
       const mode = s.payment_mode || "unknown";
       if (!map[mode]) map[mode] = { mode, count: 0, total: 0, avgBill: 0 };
       map[mode].count++; map[mode].total += Number(s.grand_total);
@@ -153,45 +142,65 @@ export default function Reports() {
   }, [filteredSaleItems, items]);
 
   const gstWiseReport = useMemo(() => {
-    const map: Record<string, { rate: number; taxableValue: number; cgst: number; sgst: number; igst: number; totalTax: number; items: number }> = {};
+    const map: Record<string, { rate: number; taxableValue: number; cgst: number; sgst: number; totalTax: number; items: number }> = {};
     filteredSaleItems.forEach(si => {
       const item = items.find(i => i.id === si.item_id);
       const gstRate = Number(item?.gst_rate || 0);
       const key = `${gstRate}%`;
-      if (!map[key]) map[key] = { rate: gstRate, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, totalTax: 0, items: 0 };
-      const taxable = Number(si.total);
+      if (!map[key]) map[key] = { rate: gstRate, taxableValue: 0, cgst: 0, sgst: 0, totalTax: 0, items: 0 };
+      map[key].taxableValue += Number(si.total);
       const tax = Number(si.tax_amount || 0);
-      map[key].taxableValue += taxable;
-      map[key].cgst += tax / 2;
-      map[key].sgst += tax / 2;
-      map[key].totalTax += tax;
-      map[key].items += 1;
+      map[key].cgst += tax / 2; map[key].sgst += tax / 2; map[key].totalTax += tax; map[key].items += 1;
     });
     return Object.values(map).sort((a, b) => a.rate - b.rate);
   }, [filteredSaleItems, items]);
 
   const supplierWise = useMemo(() => {
     const map: Record<string, { name: string; count: number; total: number }> = {};
-    purchases.forEach(p => {
+    filteredPurchases.forEach(p => {
       const name = supplierMap[p.supplier_id] || "Unknown";
       if (!map[name]) map[name] = { name, count: 0, total: 0 };
       map[name].count++; map[name].total += Number(p.grand_total);
     });
     return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [purchases, supplierMap]);
+  }, [filteredPurchases, supplierMap]);
 
   const deviceWiseSales = useMemo(() => {
     const deviceMap = Object.fromEntries(devices.map(d => [d.id, d.name]));
-    const map: Record<string, { name: string; count: number; total: number }> = {};
-    filteredSales.forEach(s => {
-      const name = s.device_id ? (deviceMap[s.device_id] || "Unknown Device") : "No Device";
-      if (!map[name]) map[name] = { name, count: 0, total: 0 };
-      map[name].count++; map[name].total += Number(s.grand_total);
+    const map: Record<string, { name: string; deviceId: string; count: number; total: number; avgBill: number }> = {};
+    filteredSales.filter(s => s.status === "completed").forEach(s => {
+      const key = s.device_id || "no_device";
+      const name = s.device_id ? (deviceMap[s.device_id] || `Device ${s.device_id.slice(0,6)}`) : "No Device";
+      if (!map[key]) map[key] = { name, deviceId: key, count: 0, total: 0, avgBill: 0 };
+      map[key].count++; map[key].total += Number(s.grand_total);
     });
+    Object.values(map).forEach(d => { d.avgBill = d.count > 0 ? d.total / d.count : 0; });
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [filteredSales, devices]);
 
-  // View bill detail
+  // Daily sales trend for P&L
+  const dailyTrend = useMemo(() => {
+    const salesMap: Record<string, number> = {};
+    const expMap: Record<string, number> = {};
+    filteredSales.filter(s => s.status === "completed").forEach(s => {
+      const d = new Date(s.created_at).toLocaleDateString();
+      salesMap[d] = (salesMap[d] || 0) + Number(s.grand_total);
+    });
+    filteredExpenses.forEach(e => {
+      const d = new Date(e.expense_date || e.created_at).toLocaleDateString();
+      expMap[d] = (expMap[d] || 0) + Number(e.amount);
+    });
+    const allDates = [...new Set([...Object.keys(salesMap), ...Object.keys(expMap)])].sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    return allDates.map(d => ({ date: d, revenue: salesMap[d] || 0, expenses: expMap[d] || 0, profit: (salesMap[d] || 0) - (expMap[d] || 0) }));
+  }, [filteredSales, filteredExpenses]);
+
+  // Expense breakdown by category for P&L
+  const expenseByCategory = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredExpenses.forEach(e => { map[e.category] = (map[e.category] || 0) + Number(e.amount); });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [filteredExpenses]);
+
   const viewBill = async (sale: any) => {
     setSelectedBill(sale);
     setLoadingBillItems(true);
@@ -219,34 +228,30 @@ export default function Reports() {
     else if (tab === "sales") exportToExcel(itemWiseSales.map(s => ({ Item: s.name, Qty: s.qty, Revenue: s.revenue.toFixed(2) })), "sales-report");
     else if (tab === "stock") exportToExcel(items.map(i => ({ Name: i.name, Stock: Number(i.stock), Price: Number(i.price), Unit: i.unit || "pcs" })), "stock-report");
     else if (tab === "bills") exportToExcel(filteredSales.map(s => ({ Invoice: s.invoice_number, Date: new Date(s.created_at).toLocaleDateString(), Payment: s.payment_mode, Status: s.status, Amount: Number(s.grand_total).toFixed(2) })), "bills");
-    else if (tab === "expiry") exportToExcel(expiryItems.map(i => ({ Name: i.name, Batch: i.batch_number || "", Stock: Number(i.stock), "Cost Price": Number(i.cost_price || 0).toFixed(2), "Stock Value": i.stockValue.toFixed(2), Expiry: i.expiry_date, DaysLeft: i.daysLeft, MRP: Number(i.mrp).toFixed(2) })), "expiry-report");
-    else if (tab === "devices") exportToExcel(deviceWiseSales.map(d => ({ Device: d.name, Orders: d.count, Total: d.total.toFixed(2) })), "device-sales");
+    else if (tab === "expiry") exportToExcel(expiryItems.map(i => ({ Name: i.name, Batch: i.batch_number || "", Manufacturer: i.manufacturer || "", Stock: Number(i.stock), MRP: Number(i.mrp).toFixed(2), "Stock Value": i.stockValue.toFixed(2), Expiry: i.expiry_date, DaysLeft: i.daysLeft })), "expiry-report");
+    else if (tab === "devices") exportToExcel(deviceWiseSales.map(d => ({ Device: d.name, Orders: d.count, Total: d.total.toFixed(2), "Avg Bill": d.avgBill.toFixed(2) })), "device-sales");
     else if (tab === "payments") exportToExcel(paymentWiseReport.map(p => ({ Mode: p.mode.toUpperCase(), Transactions: p.count, Total: p.total.toFixed(2), "Avg Bill": p.avgBill.toFixed(2) })), "payment-report");
+    else if (tab === "pnl") exportToExcel([{ "Net Sales": netSales.toFixed(2), "Cost of Goods": costOfGoods.toFixed(2), "Gross Profit": grossProfit.toFixed(2), Expenses: totalExpenses.toFixed(2), "Net Profit": netProfit.toFixed(2), Purchases: totalPurchases.toFixed(2), Refunds: totalRefunds.toFixed(2) }], "pnl-report");
     else exportToExcel(filteredSales.map(s => ({ Invoice: s.invoice_number, Date: new Date(s.created_at).toLocaleDateString(), Payment: s.payment_mode, Amount: Number(s.grand_total).toFixed(2) })), "overview-report");
   };
 
   const handleExportPDF = () => {
     if (tab === "gst") exportToPDF("GST Report", ["Rate", "Taxable", "CGST", "SGST", "Total Tax", "Items"], gstWiseReport.map(g => [`${g.rate}%`, `₹${g.taxableValue.toFixed(0)}`, `₹${g.cgst.toFixed(0)}`, `₹${g.sgst.toFixed(0)}`, `₹${g.totalTax.toFixed(0)}`, String(g.items)]));
-    else if (tab === "sales") exportToPDF("Sales Report", ["Item", "Qty", "Revenue"], itemWiseSales.map(s => [s.name, String(s.qty), `₹${s.revenue.toFixed(0)}`]));
-    else if (tab === "stock") exportToPDF("Stock Report", ["Name", "Stock", "Price"], items.map(i => [i.name, String(Number(i.stock)), `₹${Number(i.price)}`]));
-    else if (tab === "expiry") exportToPDF("Expiry Report", ["Name", "Batch", "Stock", "Value", "Expiry", "Days"], expiryItems.map(i => [i.name, i.batch_number || "—", String(Number(i.stock)), `₹${i.stockValue.toFixed(0)}`, i.expiry_date, i.expired ? "EXPIRED" : `${i.daysLeft}d`]));
+    else if (tab === "pnl") exportToPDF("P&L Report", ["Metric", "Amount"], [["Net Sales", `₹${netSales.toFixed(0)}`], ["Refunds", `₹${totalRefunds.toFixed(0)}`], ["COGS", `₹${costOfGoods.toFixed(0)}`], ["Gross Profit", `₹${grossProfit.toFixed(0)}`], ["Expenses", `₹${totalExpenses.toFixed(0)}`], ["Purchases", `₹${totalPurchases.toFixed(0)}`], ["Net Profit", `₹${netProfit.toFixed(0)}`]]);
+    else if (tab === "expiry") exportToPDF("Expiry Report", ["Name", "Batch", "Stock", "MRP", "Value", "Expiry", "Days"], expiryItems.map(i => [i.name, i.batch_number || "—", String(Number(i.stock)), `₹${Number(i.mrp).toFixed(0)}`, `₹${i.stockValue.toFixed(0)}`, i.expiry_date, i.expired ? "EXPIRED" : `${i.daysLeft}d`]));
     else if (tab === "payments") exportToPDF("Payment Report", ["Mode", "Transactions", "Total", "Avg Bill"], paymentWiseReport.map(p => [p.mode.toUpperCase(), String(p.count), `₹${p.total.toFixed(0)}`, `₹${p.avgBill.toFixed(0)}`]));
-    else exportToPDF("Overview Report", ["Invoice", "Date", "Payment", "Amount"], filteredSales.map(s => [s.invoice_number, new Date(s.created_at).toLocaleDateString(), s.payment_mode, `₹${Number(s.grand_total).toFixed(0)}`]));
+    else if (tab === "devices") exportToPDF("Device Sales", ["Device", "Orders", "Revenue", "Avg Bill"], deviceWiseSales.map(d => [d.name, String(d.count), `₹${d.total.toFixed(0)}`, `₹${d.avgBill.toFixed(0)}`]));
+    else exportToPDF("Sales Report", ["Invoice", "Date", "Payment", "Amount"], filteredSales.map(s => [s.invoice_number, new Date(s.created_at).toLocaleDateString(), s.payment_mode, `₹${Number(s.grand_total).toFixed(0)}`]));
   };
 
   const tooltipStyle = { backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' };
+  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️" };
 
-  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️" };
-
-  // Filtered bills for search
   const searchedBills = useMemo(() => {
     if (!searchQuery) return filteredSales;
     const q = searchQuery.toLowerCase();
     return filteredSales.filter(s =>
-      s.invoice_number?.toLowerCase().includes(q) ||
-      s.payment_mode?.toLowerCase().includes(q) ||
-      s.status?.toLowerCase().includes(q) ||
-      String(s.grand_total).includes(q)
+      s.invoice_number?.toLowerCase().includes(q) || s.payment_mode?.toLowerCase().includes(q) || s.status?.toLowerCase().includes(q) || String(s.grand_total).includes(q)
     );
   }, [filteredSales, searchQuery]);
 
@@ -257,7 +262,7 @@ export default function Reports() {
         <div className="flex gap-1.5 mt-3 overflow-x-auto scrollbar-thin">
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all capitalize touch-manipulation ${tab === t ? "bg-primary/15 text-primary border border-primary/30" : "bg-muted text-muted-foreground border border-transparent"}`}>
-              {tabIcons[t]} {t}
+              {tabIcons[t]} {t === "pnl" ? "P&L" : t}
             </button>
           ))}
         </div>
@@ -277,10 +282,10 @@ export default function Reports() {
           {/* Overview */}
           {tab === "overview" && <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Sales</p><p className="text-2xl font-bold text-foreground mt-1">₹{totalSales.toLocaleString()}</p><p className="text-xs text-success">{filteredSales.length} orders</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Sales</p><p className="text-2xl font-bold text-foreground mt-1">₹{netSales.toLocaleString()}</p><p className="text-xs text-success">{filteredSales.filter(s => s.status === "completed").length} orders</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Expenses</p><p className="text-2xl font-bold text-foreground mt-1">₹{totalExpenses.toLocaleString()}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Tax</p><p className="text-2xl font-bold text-accent mt-1">₹{totalTax.toLocaleString()}</p></div>
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Net Profit</p><p className={`text-2xl font-bold mt-1 ${totalSales - totalExpenses >= 0 ? "text-success" : "text-destructive"}`}>₹{(totalSales - totalExpenses).toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Net Profit</p><p className={`text-2xl font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-destructive"}`}>₹{netProfit.toLocaleString()}</p></div>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="glass-card rounded-xl p-5">
@@ -309,11 +314,75 @@ export default function Reports() {
             </div>
           </>}
 
+          {/* P&L - Complete */}
+          {tab === "pnl" && <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Net Sales</p><p className="text-2xl font-bold text-success mt-1">₹{netSales.toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">COGS</p><p className="text-2xl font-bold text-foreground mt-1">₹{costOfGoods.toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Gross Profit</p><p className={`text-2xl font-bold mt-1 ${grossProfit >= 0 ? "text-success" : "text-destructive"}`}>₹{grossProfit.toLocaleString()}</p><p className="text-xs text-muted-foreground">{netSales > 0 ? ((grossProfit / netSales) * 100).toFixed(1) : 0}% margin</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase flex items-center gap-1"><DollarSign className="h-3 w-3" /> Net Profit</p><p className={`text-2xl font-bold mt-1 ${netProfit >= 0 ? "text-success" : "text-destructive"}`}>₹{netProfit.toLocaleString()}</p></div>
+            </div>
+
+            {/* P&L Statement */}
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Profit & Loss Statement</h3>
+              <div className="space-y-1">
+                <div className="flex justify-between py-2 text-sm"><span className="text-foreground font-medium">Gross Sales</span><span className="text-foreground font-semibold">₹{totalSales.toLocaleString()}</span></div>
+                <div className="flex justify-between py-2 text-sm"><span className="text-muted-foreground pl-4">(-) Refunds / Returns</span><span className="text-destructive">₹{totalRefunds.toLocaleString()}</span></div>
+                <div className="flex justify-between py-2 text-sm"><span className="text-muted-foreground pl-4">(-) Discounts Given</span><span className="text-destructive">₹{totalDiscount.toLocaleString()}</span></div>
+                <div className="flex justify-between py-2 text-sm border-t border-border font-medium"><span className="text-foreground">Net Sales Revenue</span><span className="text-success">₹{netSales.toLocaleString()}</span></div>
+                <div className="flex justify-between py-2 text-sm"><span className="text-muted-foreground pl-4">(-) Cost of Goods Sold</span><span className="text-foreground">₹{costOfGoods.toLocaleString()}</span></div>
+                <div className="flex justify-between py-2 text-sm border-t border-border font-medium"><span className="text-foreground">Gross Profit</span><span className={grossProfit >= 0 ? "text-success" : "text-destructive"}>₹{grossProfit.toLocaleString()}</span></div>
+                <div className="h-2" />
+                <div className="flex justify-between py-2 text-sm font-medium text-foreground"><span>Operating Expenses</span><span className="text-destructive">₹{totalExpenses.toLocaleString()}</span></div>
+                {expenseByCategory.map((ec, i) => (
+                  <div key={i} className="flex justify-between py-1 text-sm"><span className="text-muted-foreground pl-4 capitalize">{ec.name}</span><span className="text-muted-foreground">₹{ec.value.toLocaleString()}</span></div>
+                ))}
+                <div className="flex justify-between py-2 text-sm"><span className="text-foreground">Purchases</span><span className="text-foreground">₹{totalPurchases.toLocaleString()}</span></div>
+                <div className="flex justify-between py-2 text-sm"><span className="text-foreground">Tax Collected (GST)</span><span className="text-accent">₹{totalTax.toLocaleString()}</span></div>
+                <div className="h-px bg-border my-2" />
+                <div className="flex justify-between py-3 text-lg font-bold border-t-2 border-border"><span className="text-foreground">Net Profit / Loss</span><span className={netProfit >= 0 ? "text-success" : "text-destructive"}>₹{netProfit.toLocaleString()}</span></div>
+              </div>
+            </div>
+
+            {/* Daily Revenue vs Expenses trend */}
+            {dailyTrend.length > 0 && (
+              <div className="glass-card rounded-xl p-5">
+                <h3 className="text-sm font-semibold text-foreground mb-4">Revenue vs Expenses Trend</h3>
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={dailyTrend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="date" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} />
+                    <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => `₹${v.toFixed(0)}`} />
+                    <Legend />
+                    <Line type="monotone" dataKey="revenue" stroke="hsl(152 60% 45%)" strokeWidth={2} name="Revenue" dot={false} />
+                    <Line type="monotone" dataKey="expenses" stroke="hsl(0 72% 55%)" strokeWidth={2} name="Expenses" dot={false} />
+                    <Line type="monotone" dataKey="profit" stroke="hsl(187 72% 50%)" strokeWidth={2} name="Profit" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Expense breakdown pie */}
+            {expenseByCategory.length > 0 && (
+              <div className="glass-card rounded-xl p-5">
+                <h3 className="text-sm font-semibold text-foreground mb-4">Expense Breakdown</h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart><Pie data={expenseByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                    {expenseByCategory.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie><Tooltip contentStyle={tooltipStyle} /></PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </>}
+
           {/* Bills Tab */}
           {tab === "bills" && <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Bills</p><p className="text-2xl font-bold text-foreground mt-1">{searchedBills.length}</p></div>
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Revenue</p><p className="text-2xl font-bold text-primary mt-1">₹{searchedBills.reduce((s, x) => s + Number(x.grand_total), 0).toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Revenue</p><p className="text-2xl font-bold text-primary mt-1">₹{searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total), 0).toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Refunds</p><p className="text-2xl font-bold text-destructive mt-1">₹{searchedBills.filter(s => s.status === "refunded").reduce((s, x) => s + Number(x.grand_total), 0).toLocaleString()}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Discount Given</p><p className="text-2xl font-bold text-accent mt-1">₹{totalDiscount.toLocaleString()}</p></div>
             </div>
             <div className="glass-card rounded-xl p-5">
@@ -337,7 +406,7 @@ export default function Reports() {
                         <td className="py-2 text-xs text-muted-foreground">{new Date(s.created_at).toLocaleString()}</td>
                         <td className="py-2 text-xs text-foreground">{cust?.name || "—"}</td>
                         <td className="py-2"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{s.payment_mode}</span></td>
-                        <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${s.status === "completed" ? "bg-success/10 text-success" : s.status === "cancelled" ? "bg-destructive/10 text-destructive" : "bg-accent/10 text-accent"}`}>{s.status}</span></td>
+                        <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${s.status === "completed" ? "bg-success/10 text-success" : s.status === "refunded" ? "bg-accent/10 text-accent" : s.status === "cancelled" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>{s.status}</span></td>
                         <td className="py-2 text-right font-semibold text-foreground">₹{Number(s.grand_total).toFixed(0)}</td>
                         <td className="py-2 text-center"><Eye className="h-4 w-4 text-muted-foreground inline hover:text-primary" /></td>
                       </tr>
@@ -491,8 +560,8 @@ export default function Reports() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Revenue</p><p className="text-2xl font-bold text-primary mt-1">₹{totalSales.toLocaleString()}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Payment Modes</p><p className="text-2xl font-bold text-foreground mt-1">{paymentWiseReport.length}</p></div>
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Bills</p><p className="text-2xl font-bold text-foreground mt-1">{filteredSales.length}</p></div>
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Avg Bill</p><p className="text-2xl font-bold text-accent mt-1">₹{filteredSales.length > 0 ? (totalSales / filteredSales.length).toFixed(0) : 0}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Bills</p><p className="text-2xl font-bold text-foreground mt-1">{filteredSales.filter(s => s.status === "completed").length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Avg Bill</p><p className="text-2xl font-bold text-accent mt-1">₹{filteredSales.filter(s => s.status === "completed").length > 0 ? (totalSales / filteredSales.filter(s => s.status === "completed").length).toFixed(0) : 0}</p></div>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="glass-card rounded-xl p-5">
@@ -518,9 +587,9 @@ export default function Reports() {
                       ))}
                       <tr className="border-t-2 border-border font-bold">
                         <td className="py-2 text-foreground">TOTAL</td>
-                        <td className="py-2 text-right text-foreground">{filteredSales.length}</td>
+                        <td className="py-2 text-right text-foreground">{filteredSales.filter(s => s.status === "completed").length}</td>
                         <td className="py-2 text-right text-primary">₹{totalSales.toLocaleString()}</td>
-                        <td className="py-2 text-right text-foreground">₹{filteredSales.length > 0 ? (totalSales / filteredSales.length).toFixed(0) : 0}</td>
+                        <td className="py-2 text-right text-foreground">₹{filteredSales.filter(s => s.status === "completed").length > 0 ? (totalSales / filteredSales.filter(s => s.status === "completed").length).toFixed(0) : 0}</td>
                         <td className="py-2 text-right text-foreground">100%</td>
                       </tr>
                     </tbody>
@@ -545,7 +614,7 @@ export default function Reports() {
             </div>
           </>}
 
-          {/* Expiry - Enhanced */}
+          {/* Expiry - Fixed columns */}
           {tab === "expiry" && <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Expired</p><p className="text-2xl font-bold text-destructive mt-1">{expiryItems.filter(i => i.expired).length}</p></div>
@@ -562,7 +631,7 @@ export default function Reports() {
                     <th className="text-left py-2 text-xs text-muted-foreground hidden sm:table-cell">Batch</th>
                     <th className="text-left py-2 text-xs text-muted-foreground hidden sm:table-cell">Manufacturer</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Stock</th>
-                    <th className="text-right py-2 text-xs text-muted-foreground hidden sm:table-cell">MRP</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">MRP</th>
                     <th className="text-right py-2 text-xs text-muted-foreground hidden sm:table-cell">Value</th>
                     <th className="text-left py-2 text-xs text-muted-foreground">Expiry</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Days Left</th>
@@ -572,8 +641,8 @@ export default function Reports() {
                       <td className="py-2 text-foreground">{item.name}</td>
                       <td className="py-2 text-muted-foreground font-mono text-xs hidden sm:table-cell">{item.batch_number || "—"}</td>
                       <td className="py-2 text-muted-foreground text-xs hidden sm:table-cell">{item.manufacturer || "—"}</td>
-                      <td className="py-2 text-right text-foreground">{Number(item.stock)}</td>
-                      <td className="py-2 text-right text-muted-foreground hidden sm:table-cell">₹{Number(item.mrp).toFixed(0)}</td>
+                      <td className="py-2 text-right text-foreground font-medium">{Number(item.stock)}</td>
+                      <td className="py-2 text-right text-muted-foreground">₹{Number(item.mrp).toFixed(0)}</td>
                       <td className="py-2 text-right text-foreground hidden sm:table-cell">₹{item.stockValue.toFixed(0)}</td>
                       <td className="py-2 text-xs text-muted-foreground">{item.expiry_date}</td>
                       <td className="py-2 text-right"><span className={`font-semibold ${item.expired ? "text-destructive" : item.daysLeft <= 30 ? "text-accent" : item.daysLeft <= 90 ? "text-foreground" : "text-success"}`}>{item.expired ? "EXPIRED" : `${item.daysLeft}d`}</span></td>
@@ -585,7 +654,7 @@ export default function Reports() {
             </div>
           </>}
 
-          {/* Devices */}
+          {/* Devices - Enhanced */}
           {tab === "devices" && <>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Devices</p><p className="text-2xl font-bold text-foreground mt-1">{devices.length}</p></div>
@@ -596,14 +665,39 @@ export default function Reports() {
               <h3 className="text-sm font-semibold text-foreground mb-4"><Monitor className="h-4 w-4 text-primary inline mr-2" />Device-wise Sales</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead><tr className="border-b border-border"><th className="text-left py-2 text-xs text-muted-foreground">Device</th><th className="text-right py-2 text-xs text-muted-foreground">Orders</th><th className="text-right py-2 text-xs text-muted-foreground">Revenue</th></tr></thead>
-                  <tbody>{deviceWiseSales.map((d, i) => (
-                    <tr key={i} className="border-b border-border/30"><td className="py-2 text-foreground">{d.name}</td><td className="py-2 text-right text-muted-foreground">{d.count}</td><td className="py-2 text-right font-semibold text-primary">₹{d.total.toLocaleString()}</td></tr>
-                  ))}</tbody>
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">Device</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Orders</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Revenue</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Avg Bill</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Share %</th>
+                  </tr></thead>
+                  <tbody>{deviceWiseSales.map((d, i) => {
+                    const totalDevRev = deviceWiseSales.reduce((s, x) => s + x.total, 0);
+                    return (
+                      <tr key={i} className="border-b border-border/30">
+                        <td className="py-2 text-foreground">{d.name}</td>
+                        <td className="py-2 text-right text-muted-foreground">{d.count}</td>
+                        <td className="py-2 text-right font-semibold text-primary">₹{d.total.toLocaleString()}</td>
+                        <td className="py-2 text-right text-muted-foreground">₹{d.avgBill.toFixed(0)}</td>
+                        <td className="py-2 text-right text-accent">{totalDevRev > 0 ? ((d.total / totalDevRev) * 100).toFixed(1) : 0}%</td>
+                      </tr>
+                    );
+                  })}</tbody>
                 </table>
               </div>
               {deviceWiseSales.length === 0 && <p className="text-muted-foreground text-center py-8">No data</p>}
             </div>
+            {deviceWiseSales.length > 0 && (
+              <div className="glass-card rounded-xl p-5">
+                <h3 className="text-sm font-semibold text-foreground mb-4">Device Revenue Distribution</h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart><Pie data={deviceWiseSales} dataKey="total" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                    {deviceWiseSales.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie><Tooltip contentStyle={tooltipStyle} formatter={(v: number) => `₹${v.toFixed(0)}`} /></PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </>}
         </>}
       </div>
@@ -621,11 +715,10 @@ export default function Reports() {
             </div>
 
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${selectedBill.status === "completed" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>{selectedBill.status}</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${selectedBill.status === "completed" ? "bg-success/10 text-success" : selectedBill.status === "refunded" ? "bg-accent/10 text-accent" : "bg-destructive/10 text-destructive"}`}>{selectedBill.status}</span>
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{selectedBill.payment_mode}</span>
             </div>
 
-            {/* Customer info */}
             {selectedBill.customer_id && customerMap[selectedBill.customer_id] && (
               <div className="mb-3 p-2 rounded-lg bg-muted/30 border border-border/30">
                 <p className="text-xs text-muted-foreground">Customer</p>
@@ -646,7 +739,7 @@ export default function Reports() {
                   {billItems.map(si => (
                     <tr key={si.id} className="border-b border-border/30">
                       <td className="py-2 text-foreground text-xs">{si.item_name}</td>
-                      <td className="py-2 text-right text-muted-foreground text-xs">{si.quantity}{si.sale_unit === "loose" ? " loose" : ""}</td>
+                      <td className="py-2 text-right text-muted-foreground text-xs">{si.quantity}</td>
                       <td className="py-2 text-right text-muted-foreground text-xs">₹{Number(si.unit_price).toFixed(2)}</td>
                       <td className="py-2 text-right font-medium text-foreground text-xs">₹{Number(si.total).toFixed(2)}</td>
                     </tr>
@@ -665,7 +758,6 @@ export default function Reports() {
               {Number(selectedBill.change_amount || 0) > 0 && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Change</span><span className="text-accent">₹{Number(selectedBill.change_amount).toFixed(2)}</span></div>}
             </div>
 
-            {/* Print and WhatsApp share at bottom */}
             <div className="flex gap-3 mt-4 pt-3 border-t border-border">
               <button onClick={printBill} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 touch-manipulation">
                 <Printer className="h-4 w-4" /> Print
