@@ -636,8 +636,8 @@ export default function POS() {
           </div>
         </div>
 
-        {/* Right: Bill Panel */}
-        <div className="w-full md:w-[380px] flex flex-col bg-card/30 shrink-0 border-t md:border-t-0 border-border max-h-[50vh] md:max-h-none">
+        {/* Right: Bill Panel - mobile: min-h for 4 items visible */}
+        <div className="w-full md:w-[380px] flex flex-col bg-card/30 shrink-0 border-t md:border-t-0 border-border max-h-[55vh] md:max-h-none">
           <div className="px-4 py-3 border-b border-border">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">Current Bill</h3>
@@ -668,33 +668,33 @@ export default function POS() {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
+          {/* Cart items - compact on mobile to show 4+ items */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin min-h-0">
             {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full py-8 text-muted-foreground">
+              <div className="flex flex-col items-center justify-center h-full py-4 text-muted-foreground">
                 <ShoppingCart className="h-8 w-8 mb-2 opacity-30" />
                 <p className="text-sm">No items yet</p>
-                <p className="text-xs">Scan or click to add</p>
               </div>
             ) : (
               <div className="divide-y divide-border/50">
                 {cart.map(ci => (
-                  <div key={getCartItemKey(ci)} className="px-4 py-3 hover:bg-muted/20 transition-colors">
-                    <div className="flex items-start justify-between gap-2">
+                  <div key={getCartItemKey(ci)} className="px-3 py-2 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
+                        <p className="text-xs font-medium text-foreground truncate">
                           {ci.item.name}
-                          {ci.isLoose && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">LOOSE</span>}
+                          {ci.isLoose && <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-accent/10 text-accent">L</span>}
                         </p>
-                        <p className="text-xs text-muted-foreground">₹{(ci.loosePrice || Number(ci.item.price)).toFixed(1)} × {ci.quantity} • GST {Number(ci.item.gst_rate) || 0}%</p>
+                        <p className="text-[10px] text-muted-foreground">₹{(ci.loosePrice || Number(ci.item.price)).toFixed(0)} × {ci.quantity}</p>
                       </div>
-                      <p className="text-sm font-semibold text-foreground whitespace-nowrap">₹{ci.total.toFixed(0)}</p>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2">
-                      <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-1.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-3 w-3" /></button>
-                      <button onClick={() => { setShowQtyEdit(getCartItemKey(ci)); setQtyInput(String(ci.quantity)); }}
-                        className="text-sm font-mono font-semibold text-foreground w-12 text-center py-1 rounded bg-muted/50 hover:bg-muted cursor-pointer touch-manipulation">{ci.quantity}</button>
-                      <button onClick={() => updateQty(ci.item.id, 1, ci.isLoose)} className="p-1.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Plus className="h-3 w-3" /></button>
-                      <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive ml-auto touch-manipulation"><Trash2 className="h-3 w-3" /></button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-1 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-2.5 w-2.5" /></button>
+                        <button onClick={() => { setShowQtyEdit(getCartItemKey(ci)); setQtyInput(String(ci.quantity)); }}
+                          className="text-xs font-mono font-semibold text-foreground w-8 text-center py-0.5 rounded bg-muted/50 touch-manipulation">{ci.quantity}</button>
+                        <button onClick={() => updateQty(ci.item.id, 1, ci.isLoose)} className="p-1 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Plus className="h-2.5 w-2.5" /></button>
+                      </div>
+                      <p className="text-xs font-semibold text-foreground whitespace-nowrap w-14 text-right">₹{ci.total.toFixed(0)}</p>
+                      <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-2.5 w-2.5" /></button>
                     </div>
                   </div>
                 ))}
