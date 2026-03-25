@@ -471,6 +471,57 @@ export default function POS() {
     setShowReprint(false);
   };
 
+  // Sales Return
+  const openReturn = async (sale: any) => {
+    setReturnBill(sale);
+    const { data } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
+    setReturnItems((data as any) || []);
+    setReturnQtys({});
+    setShowReturn(true);
+    setShowReprint(false);
+  };
+
+  const processReturn = async () => {
+    if (!returnBill || !tenantId) return;
+    const returningItems = returnItems.filter(si => (returnQtys[si.id] || 0) > 0);
+    if (returningItems.length === 0) { toast.error("Select items to return"); return; }
+
+    try {
+      let refundTotal = 0;
+      for (const si of returningItems) {
+        const qty = returnQtys[si.id];
+        const refundAmt = (Number(si.unit_price) * qty);
+        refundTotal += refundAmt;
+
+        // Restore stock
+        const item = items.find(i => i.id === si.item_id);
+        if (item) {
+          const isLoose = si.item_name?.includes("(Loose)");
+          const stockAdd = isLoose && item.weight_per_unit ? qty / item.weight_per_unit : qty;
+          await supabase.from("items").update({ stock: parseFloat((Number(item.stock) + stockAdd).toFixed(4)) } as any).eq("id", si.item_id);
+        }
+      }
+
+      // Create refund sale record
+      await supabase.from("sales").insert({
+        tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
+        invoice_number: `RET-${Date.now().toString(36).toUpperCase()}`,
+        subtotal: refundTotal, discount: 0, tax_total: 0, grand_total: refundTotal,
+        payment_mode: returnBill.payment_mode as any, amount_paid: refundTotal,
+        status: "refunded" as any,
+        notes: `Return against ${returnBill.invoice_number}`,
+        customer_id: returnBill.customer_id,
+      } as any);
+
+      toast.success(`Refund ₹${refundTotal.toFixed(0)} processed. Stock restored.`);
+      setShowReturn(false); setReturnBill(null);
+
+      // Refresh items
+      const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
+      if (it) { setItems(it as unknown as Item[]); cacheItems(it); }
+    } catch (err: any) { toast.error(err.message); }
+  };
+
   const deleteTodayBill = async (sale: any) => {
     if (!confirm(`Delete bill ${sale.invoice_number}? This cannot be undone.`)) return;
     try {
