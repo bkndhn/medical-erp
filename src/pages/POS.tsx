@@ -64,6 +64,10 @@ export default function POS() {
   const [showReprint, setShowReprint] = useState(false);
   const [showDeleteBill, setShowDeleteBill] = useState(false);
   const [pastBills, setPastBills] = useState<any[]>([]);
+  const [showReturn, setShowReturn] = useState(false);
+  const [returnBill, setReturnBill] = useState<any>(null);
+  const [returnItems, setReturnItems] = useState<any[]>([]);
+  const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSaving, setIsSaving] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
