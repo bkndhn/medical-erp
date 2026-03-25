@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone } from "lucide-react";
+import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone, Undo2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
