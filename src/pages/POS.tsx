@@ -903,9 +903,14 @@ export default function POS() {
                       <p className="text-sm font-medium text-foreground font-mono">{bill.invoice_number}</p>
                       <p className="text-xs text-muted-foreground">{new Date(bill.created_at).toLocaleString()} • ₹{Number(bill.grand_total).toFixed(0)}</p>
                     </div>
-                    <button onClick={() => reprintBill(bill)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 touch-manipulation">
-                      <Printer className="h-3 w-3" /> Print
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => openReturn(bill)} className="flex items-center gap-1 px-2 py-2 rounded-lg text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 touch-manipulation">
+                        <Undo2 className="h-3 w-3" /> Return
+                      </button>
+                      <button onClick={() => reprintBill(bill)} className="flex items-center gap-1 px-2 py-2 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 touch-manipulation">
+                        <Printer className="h-3 w-3" /> Print
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
