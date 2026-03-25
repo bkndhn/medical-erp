@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone } from "lucide-react";
+import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone, Undo2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
@@ -64,6 +64,10 @@ export default function POS() {
   const [showReprint, setShowReprint] = useState(false);
   const [showDeleteBill, setShowDeleteBill] = useState(false);
   const [pastBills, setPastBills] = useState<any[]>([]);
+  const [showReturn, setShowReturn] = useState(false);
+  const [returnBill, setReturnBill] = useState<any>(null);
+  const [returnItems, setReturnItems] = useState<any[]>([]);
+  const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isSaving, setIsSaving] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -467,6 +471,57 @@ export default function POS() {
     setShowReprint(false);
   };
 
+  // Sales Return
+  const openReturn = async (sale: any) => {
+    setReturnBill(sale);
+    const { data } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
+    setReturnItems((data as any) || []);
+    setReturnQtys({});
+    setShowReturn(true);
+    setShowReprint(false);
+  };
+
+  const processReturn = async () => {
+    if (!returnBill || !tenantId) return;
+    const returningItems = returnItems.filter(si => (returnQtys[si.id] || 0) > 0);
+    if (returningItems.length === 0) { toast.error("Select items to return"); return; }
+
+    try {
+      let refundTotal = 0;
+      for (const si of returningItems) {
+        const qty = returnQtys[si.id];
+        const refundAmt = (Number(si.unit_price) * qty);
+        refundTotal += refundAmt;
+
+        // Restore stock
+        const item = items.find(i => i.id === si.item_id);
+        if (item) {
+          const isLoose = si.item_name?.includes("(Loose)");
+          const stockAdd = isLoose && item.weight_per_unit ? qty / item.weight_per_unit : qty;
+          await supabase.from("items").update({ stock: parseFloat((Number(item.stock) + stockAdd).toFixed(4)) } as any).eq("id", si.item_id);
+        }
+      }
+
+      // Create refund sale record
+      await supabase.from("sales").insert({
+        tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
+        invoice_number: `RET-${Date.now().toString(36).toUpperCase()}`,
+        subtotal: refundTotal, discount: 0, tax_total: 0, grand_total: refundTotal,
+        payment_mode: returnBill.payment_mode as any, amount_paid: refundTotal,
+        status: "refunded" as any,
+        notes: `Return against ${returnBill.invoice_number}`,
+        customer_id: returnBill.customer_id,
+      } as any);
+
+      toast.success(`Refund ₹${refundTotal.toFixed(0)} processed. Stock restored.`);
+      setShowReturn(false); setReturnBill(null);
+
+      // Refresh items
+      const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
+      if (it) { setItems(it as unknown as Item[]); cacheItems(it); }
+    } catch (err: any) { toast.error(err.message); }
+  };
+
   const deleteTodayBill = async (sale: any) => {
     if (!confirm(`Delete bill ${sale.invoice_number}? This cannot be undone.`)) return;
     try {
@@ -636,8 +691,8 @@ export default function POS() {
           </div>
         </div>
 
-        {/* Right: Bill Panel */}
-        <div className="w-full md:w-[380px] flex flex-col bg-card/30 shrink-0 border-t md:border-t-0 border-border max-h-[50vh] md:max-h-none">
+        {/* Right: Bill Panel - mobile: min-h for 4 items visible */}
+        <div className="w-full md:w-[380px] flex flex-col bg-card/30 shrink-0 border-t md:border-t-0 border-border max-h-[55vh] md:max-h-none">
           <div className="px-4 py-3 border-b border-border">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">Current Bill</h3>
@@ -668,33 +723,33 @@ export default function POS() {
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
+          {/* Cart items - compact on mobile to show 4+ items */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin min-h-0">
             {cart.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full py-8 text-muted-foreground">
+              <div className="flex flex-col items-center justify-center h-full py-4 text-muted-foreground">
                 <ShoppingCart className="h-8 w-8 mb-2 opacity-30" />
                 <p className="text-sm">No items yet</p>
-                <p className="text-xs">Scan or click to add</p>
               </div>
             ) : (
               <div className="divide-y divide-border/50">
                 {cart.map(ci => (
-                  <div key={getCartItemKey(ci)} className="px-4 py-3 hover:bg-muted/20 transition-colors">
-                    <div className="flex items-start justify-between gap-2">
+                  <div key={getCartItemKey(ci)} className="px-3 py-2 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
+                        <p className="text-xs font-medium text-foreground truncate">
                           {ci.item.name}
-                          {ci.isLoose && <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">LOOSE</span>}
+                          {ci.isLoose && <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-accent/10 text-accent">L</span>}
                         </p>
-                        <p className="text-xs text-muted-foreground">₹{(ci.loosePrice || Number(ci.item.price)).toFixed(1)} × {ci.quantity} • GST {Number(ci.item.gst_rate) || 0}%</p>
+                        <p className="text-[10px] text-muted-foreground">₹{(ci.loosePrice || Number(ci.item.price)).toFixed(0)} × {ci.quantity}</p>
                       </div>
-                      <p className="text-sm font-semibold text-foreground whitespace-nowrap">₹{ci.total.toFixed(0)}</p>
-                    </div>
-                    <div className="flex items-center gap-2 mt-2">
-                      <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-1.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-3 w-3" /></button>
-                      <button onClick={() => { setShowQtyEdit(getCartItemKey(ci)); setQtyInput(String(ci.quantity)); }}
-                        className="text-sm font-mono font-semibold text-foreground w-12 text-center py-1 rounded bg-muted/50 hover:bg-muted cursor-pointer touch-manipulation">{ci.quantity}</button>
-                      <button onClick={() => updateQty(ci.item.id, 1, ci.isLoose)} className="p-1.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Plus className="h-3 w-3" /></button>
-                      <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive ml-auto touch-manipulation"><Trash2 className="h-3 w-3" /></button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-1 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-2.5 w-2.5" /></button>
+                        <button onClick={() => { setShowQtyEdit(getCartItemKey(ci)); setQtyInput(String(ci.quantity)); }}
+                          className="text-xs font-mono font-semibold text-foreground w-8 text-center py-0.5 rounded bg-muted/50 touch-manipulation">{ci.quantity}</button>
+                        <button onClick={() => updateQty(ci.item.id, 1, ci.isLoose)} className="p-1 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Plus className="h-2.5 w-2.5" /></button>
+                      </div>
+                      <p className="text-xs font-semibold text-foreground whitespace-nowrap w-14 text-right">₹{ci.total.toFixed(0)}</p>
+                      <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-2.5 w-2.5" /></button>
                     </div>
                   </div>
                 ))}
@@ -848,9 +903,14 @@ export default function POS() {
                       <p className="text-sm font-medium text-foreground font-mono">{bill.invoice_number}</p>
                       <p className="text-xs text-muted-foreground">{new Date(bill.created_at).toLocaleString()} • ₹{Number(bill.grand_total).toFixed(0)}</p>
                     </div>
-                    <button onClick={() => reprintBill(bill)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 touch-manipulation">
-                      <Printer className="h-3 w-3" /> Print
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => openReturn(bill)} className="flex items-center gap-1 px-2 py-2 rounded-lg text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 touch-manipulation">
+                        <Undo2 className="h-3 w-3" /> Return
+                      </button>
+                      <button onClick={() => reprintBill(bill)} className="flex items-center gap-1 px-2 py-2 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 touch-manipulation">
+                        <Printer className="h-3 w-3" /> Print
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -933,6 +993,49 @@ export default function POS() {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Sales Return Modal */}
+      {showReturn && returnBill && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowReturn(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto scrollbar-thin animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><Undo2 className="h-5 w-5 text-accent" /> Sales Return</h3>
+                <p className="text-xs text-muted-foreground">Bill: {returnBill.invoice_number} • ₹{Number(returnBill.grand_total).toFixed(0)}</p>
+              </div>
+              <button onClick={() => setShowReturn(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">Select items & qty to return. Stock will be restored and refund recorded.</p>
+            <div className="space-y-2 mb-4">
+              {returnItems.map(si => (
+                <div key={si.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">{si.item_name}</p>
+                    <p className="text-xs text-muted-foreground">Sold: {si.quantity} × ₹{Number(si.unit_price).toFixed(0)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground">Return:</label>
+                    <input type="number" min={0} max={si.quantity} value={returnQtys[si.id] || ""} onChange={e => setReturnQtys(prev => ({ ...prev, [si.id]: Math.min(si.quantity, Math.max(0, parseFloat(e.target.value) || 0)) }))}
+                      className="w-16 px-2 py-1.5 rounded bg-muted border border-border text-sm text-foreground font-mono text-center focus:outline-none focus:ring-1 focus:ring-accent/50" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {(() => {
+              const refundAmt = returnItems.reduce((s, si) => s + (Number(si.unit_price) * (returnQtys[si.id] || 0)), 0);
+              return refundAmt > 0 ? (
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 mb-4">
+                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Refund Amount</span><span className="text-lg font-bold text-accent">₹{refundAmt.toFixed(0)}</span></div>
+                </div>
+              ) : null;
+            })()}
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setShowReturn(false)} className="py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium">Cancel</button>
+              <button onClick={processReturn} className="py-2.5 rounded-lg bg-accent text-accent-foreground text-sm font-medium hover:bg-accent/90 touch-manipulation">Process Return</button>
+            </div>
           </div>
         </div>
       )}
