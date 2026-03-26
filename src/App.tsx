@@ -43,7 +43,7 @@ const App = () => (
             <Route path="/install" element={<Install />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<POS />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/pos" element={<POS />} />
               <Route path="/inventory" element={<Inventory />} />

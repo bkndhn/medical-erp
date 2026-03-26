@@ -888,16 +888,25 @@ export default function POS() {
       )}
 
       {/* Reprint Past Bills Modal (F8) */}
-      {showReprint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowReprint(false)}>
+      {showReprint && (() => {
+        const reprintSearch = (window as any).__reprintSearch || "";
+        const setReprintSearch = (v: string) => { (window as any).__reprintSearch = v; setShowReprint(true); };
+        const filtered = pastBills.filter(b => !reprintSearch || b.invoice_number?.toLowerCase().includes(reprintSearch.toLowerCase()) || String(b.grand_total).includes(reprintSearch));
+        return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => { (window as any).__reprintSearch = ""; setShowReprint(false); }}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto scrollbar-thin animate-fade-in" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-bold text-foreground">Reprint Bill (F8)</h3>
-              <button onClick={() => setShowReprint(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+              <button onClick={() => { (window as any).__reprintSearch = ""; setShowReprint(false); }} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
             </div>
-            {pastBills.length === 0 ? <p className="text-center text-muted-foreground py-8">No completed bills</p> : (
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input value={reprintSearch} onChange={e => setReprintSearch(e.target.value)} placeholder="Search by invoice number or amount..."
+                className="w-full pl-9 pr-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" autoFocus />
+            </div>
+            {filtered.length === 0 ? <p className="text-center text-muted-foreground py-8">{pastBills.length === 0 ? "No completed bills" : "No matching bills"}</p> : (
               <div className="space-y-2">
-                {pastBills.map(bill => (
+                {filtered.map(bill => (
                   <div key={bill.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50 hover:bg-muted/50 transition-colors">
                     <div>
                       <p className="text-sm font-medium text-foreground font-mono">{bill.invoice_number}</p>
@@ -917,7 +926,8 @@ export default function POS() {
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Delete Today's Bill Modal (F10) - shows ALL today's bills */}
       {showDeleteBill && (
