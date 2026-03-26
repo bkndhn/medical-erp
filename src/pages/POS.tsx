@@ -65,6 +65,7 @@ export default function POS() {
   const [reprintSearchQuery, setReprintSearchQuery] = useState("");
   const [showDeleteBill, setShowDeleteBill] = useState(false);
   const [pastBills, setPastBills] = useState<any[]>([]);
+  const [returnBill, setReturnBill] = useState<any>(null);
   const [showReturn, setShowReturn] = useState(false);
   const [returnItems, setReturnItems] = useState<any[]>([]);
   const [returnQtys, setReturnQtys] = useState<Record<string, number>>({});
