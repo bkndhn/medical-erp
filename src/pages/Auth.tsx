@@ -29,7 +29,7 @@ export default function Auth() {
       } else if (mode === "login") {
         await signIn(email, password);
         toast.success("Welcome back!");
-        navigate("/dashboard");
+        navigate("/");
       } else {
         await signUp(email, password, fullName);
         toast.success("Account created! Check your email to confirm.");

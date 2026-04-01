@@ -61,7 +61,7 @@ export default function Onboarding() {
 
       await refreshProfile();
       toast.success("Business created successfully!");
-      navigate("/dashboard");
+      navigate("/");
     } catch (err: any) {
       toast.error(err.message || "Setup failed");
     } finally {
