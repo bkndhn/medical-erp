@@ -403,6 +403,7 @@ export type Database = {
           size: string | null
           sku: string | null
           stock: number
+          supplier_id: string | null
           tenant_id: string
           unit: string | null
           updated_at: string
@@ -433,6 +434,7 @@ export type Database = {
           size?: string | null
           sku?: string | null
           stock?: number
+          supplier_id?: string | null
           tenant_id: string
           unit?: string | null
           updated_at?: string
@@ -463,6 +465,7 @@ export type Database = {
           size?: string | null
           sku?: string | null
           stock?: number
+          supplier_id?: string | null
           tenant_id?: string
           unit?: string | null
           updated_at?: string
@@ -481,6 +484,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "items_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
           {
@@ -681,6 +691,7 @@ export type Database = {
           item_id: string | null
           item_name: string
           purchase_id: string
+          purchase_unit: string
           quantity: number
           total: number
           unit_price: number
@@ -690,6 +701,7 @@ export type Database = {
           item_id?: string | null
           item_name: string
           purchase_id: string
+          purchase_unit?: string
           quantity?: number
           total?: number
           unit_price?: number
@@ -699,6 +711,7 @@ export type Database = {
           item_id?: string | null
           item_name?: string
           purchase_id?: string
+          purchase_unit?: string
           quantity?: number
           total?: number
           unit_price?: number

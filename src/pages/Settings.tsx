@@ -349,7 +349,8 @@ export default function Settings() {
           <div className="space-y-4">
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-4"><Palette className="h-4 w-4 text-primary" /> Theme</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <p className="text-xs text-muted-foreground mb-3">Choose your preferred theme mode</p>
+              <div className="grid grid-cols-2 gap-3 mb-6">
                 <button onClick={() => setTheme("dark")} className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all touch-manipulation ${theme === "dark" ? "border-primary bg-primary/5" : "border-border bg-muted/30"}`}>
                   <Moon className={`h-6 w-6 ${theme === "dark" ? "text-primary" : "text-muted-foreground"}`} />
                   <div className="text-left"><p className="text-sm font-semibold text-foreground">Dark</p><p className="text-[10px] text-muted-foreground">Easy on the eyes</p></div>
@@ -358,6 +359,34 @@ export default function Settings() {
                   <Sun className={`h-6 w-6 ${theme === "light" ? "text-primary" : "text-muted-foreground"}`} />
                   <div className="text-left"><p className="text-sm font-semibold text-foreground">Light</p><p className="text-[10px] text-muted-foreground">Bright look</p></div>
                 </button>
+              </div>
+              <h4 className="text-xs font-semibold text-foreground mb-2">Accent Color</h4>
+              <p className="text-xs text-muted-foreground mb-3">Choose the accent color used across the app</p>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {([
+                  { name: "Cyan", color: "187 72% 50%", preview: "bg-[hsl(187,72%,50%)]" },
+                  { name: "Blue", color: "220 70% 55%", preview: "bg-[hsl(220,70%,55%)]" },
+                  { name: "Purple", color: "270 60% 55%", preview: "bg-[hsl(270,60%,55%)]" },
+                  { name: "Green", color: "152 60% 45%", preview: "bg-[hsl(152,60%,45%)]" },
+                  { name: "Amber", color: "37 95% 55%", preview: "bg-[hsl(37,95%,55%)]" },
+                  { name: "Rose", color: "346 77% 55%", preview: "bg-[hsl(346,77%,55%)]" },
+                ] as const).map(c => {
+                  const current = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim();
+                  const isActive = current === c.color;
+                  return (
+                    <button key={c.name} onClick={() => {
+                      document.documentElement.style.setProperty('--primary', c.color);
+                      document.documentElement.style.setProperty('--ring', c.color);
+                      document.documentElement.style.setProperty('--sidebar-primary', c.color);
+                      localStorage.setItem('app-accent', c.color);
+                      toast.success(`Accent: ${c.name}`);
+                    }}
+                      className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all touch-manipulation ${isActive ? "border-primary" : "border-border"}`}>
+                      <div className={`w-8 h-8 rounded-full ${c.preview}`} />
+                      <span className="text-[10px] font-medium text-foreground">{c.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

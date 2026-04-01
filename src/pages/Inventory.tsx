@@ -15,7 +15,7 @@ interface Item {
   size: string | null; color: string | null; material: string | null;
   composition: string | null; manufacturer: string | null;
   weight_per_unit: number | null; is_weighable: boolean | null;
-  category_id: string | null; is_active: boolean;
+  category_id: string | null; is_active: boolean; supplier_id: string | null;
 }
 
 interface Category {
@@ -37,6 +37,7 @@ export default function Inventory() {
   const { tenantId } = useAuth();
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [tenant, setTenant] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -55,13 +56,15 @@ export default function Inventory() {
   const fetchData = async () => {
     if (!tenantId) return;
     setLoading(true);
-    const [{ data }, { data: t }, { data: cats }] = await Promise.all([
+    const [{ data }, { data: t }, { data: cats }, { data: sups }] = await Promise.all([
       supabase.from("items").select("*").eq("tenant_id", tenantId).order("name"),
       supabase.from("tenants").select("industry").eq("id", tenantId).single(),
       supabase.from("categories").select("*").eq("tenant_id", tenantId).order("sort_order"),
+      supabase.from("suppliers").select("id, name").eq("tenant_id", tenantId),
     ]);
     if (data) setItems(data as unknown as Item[]);
     if (cats) setCategories(cats as unknown as Category[]);
+    if (sups) setSuppliers(sups || []);
     setTenant(t);
     setLoading(false);
   };
@@ -83,6 +86,7 @@ export default function Inventory() {
 
   const lowStockCount = items.filter((i) => i.stock <= (i.low_stock_threshold || 10)).length;
   const categoryMap = Object.fromEntries(categories.map(c => [c.id, c]));
+  const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
 
   const handleSave = async () => {
     if (!editItem?.name || !tenantId) return;
@@ -98,7 +102,7 @@ export default function Inventory() {
           size: editItem.size, color: editItem.color, material: editItem.material,
           composition: editItem.composition, manufacturer: editItem.manufacturer,
           weight_per_unit: editItem.weight_per_unit, is_weighable: editItem.is_weighable,
-          is_active: editItem.is_active, category_id: editItem.category_id || null,
+          is_active: editItem.is_active, category_id: editItem.category_id || null, supplier_id: (editItem as any).supplier_id || null,
         }).eq("id", editItem.id);
         if (error) throw error;
         toast.success("Item updated");
@@ -233,8 +237,9 @@ export default function Inventory() {
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Price</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Stock</th>
                   <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Unit</th>
-                  {isTextile && <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">Size</th>}
-                  {isMedical && <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden lg:table-cell">Expiry</th>}
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Supplier</th>
+                  {isTextile && <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Size</th>}
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Expiry</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Actions</th>
                 </tr>
               </thead>
@@ -258,8 +263,16 @@ export default function Inventory() {
                       </span>
                     </td>
                     <td className="py-3 px-3 text-muted-foreground text-xs">{item.unit || "pcs"}</td>
-                    {isTextile && <td className="py-3 px-3 text-muted-foreground text-xs hidden sm:table-cell">{item.size || "—"}</td>}
-                    {isMedical && <td className="py-3 px-3 text-muted-foreground text-xs hidden lg:table-cell">{item.expiry_date || "—"}</td>}
+                    <td className="py-3 px-3 text-muted-foreground text-xs">{item.supplier_id ? (supplierMap[item.supplier_id] || "—") : "—"}</td>
+                    {isTextile && <td className="py-3 px-3 text-muted-foreground text-xs">{item.size || "—"}</td>}
+                    <td className="py-3 px-3 text-muted-foreground text-xs">
+                      {item.expiry_date ? (
+                        (() => {
+                          const daysLeft = Math.ceil((new Date(item.expiry_date).getTime() - Date.now()) / (1000*60*60*24));
+                          return <span className={daysLeft <= 0 ? "text-destructive font-bold" : daysLeft <= 30 ? "text-accent font-medium" : ""}>{daysLeft <= 0 ? "EXPIRED" : `${item.expiry_date} (${daysLeft}d)`}</span>;
+                        })()
+                      ) : "—"}
+                    </td>
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button onClick={() => openEdit(item)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation"><Edit2 className="h-3.5 w-3.5" /></button>
@@ -329,6 +342,15 @@ export default function Inventory() {
                 </select>
               </div>
 
+              {/* Supplier selector */}
+              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Supplier</label>
+                <select value={(editItem as any).supplier_id || ""} onChange={e => setEditItem({ ...editItem, supplier_id: e.target.value || null } as any)}
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
+                  <option value="">No Supplier</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">SKU</label>
                 <input type="text" value={editItem.sku || ""} onChange={e => setEditItem({ ...editItem, sku: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Barcode</label>
@@ -364,11 +386,12 @@ export default function Inventory() {
                 </div>
               )}
 
+              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Batch Number</label>
+                <input type="text" value={editItem.batch_number || ""} onChange={e => setEditItem({ ...editItem, batch_number: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Expiry Date</label>
+                <input type="date" value={editItem.expiry_date || ""} onChange={e => setEditItem({ ...editItem, expiry_date: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+
               {isMedical && <>
-                <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Batch Number</label>
-                  <input type="text" value={editItem.batch_number || ""} onChange={e => setEditItem({ ...editItem, batch_number: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-                <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Expiry Date</label>
-                  <input type="date" value={editItem.expiry_date || ""} onChange={e => setEditItem({ ...editItem, expiry_date: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
                 <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Composition</label>
                   <input type="text" value={editItem.composition || ""} onChange={e => setEditItem({ ...editItem, composition: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
                 <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Manufacturer</label>

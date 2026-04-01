@@ -8,8 +8,7 @@ import {
 } from "lucide-react";
 
 const primaryNav = [
-  { title: "Home", url: "/dashboard", icon: LayoutDashboard, page: "dashboard" },
-  { title: "POS", url: "/pos", icon: ShoppingCart, page: "pos" },
+  { title: "Home", url: "/", icon: LayoutDashboard, page: "pos" },
   { title: "Inventory", url: "/inventory", icon: Package, page: "inventory" },
   { title: "Invoices", url: "/invoices", icon: FileText, page: "invoices" },
 ];
@@ -46,8 +45,8 @@ export default function MobileBottomNav() {
     setShowMore(false);
   };
 
-  // Don't show on POS page (fullscreen)
-  if (location.pathname === "/pos") return null;
+  // Don't show on POS page or root (fullscreen)
+  if (location.pathname === "/pos" || location.pathname === "/") return null;
 
   return (
     <>

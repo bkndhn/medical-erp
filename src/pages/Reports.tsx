@@ -628,8 +628,9 @@ export default function Reports() {
                 <table className="w-full text-sm table-fixed">
                   <thead><tr className="border-b border-border">
                     <th className="text-left py-2 text-xs text-muted-foreground w-[20%]">Item</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground hidden sm:table-cell w-[10%]">Batch</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground hidden sm:table-cell w-[14%]">Manufacturer</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[10%]">Batch</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[12%]">Manufacturer</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[10%]">Supplier</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">Stock</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">MRP</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[10%]">Value</th>
@@ -639,8 +640,9 @@ export default function Reports() {
                   <tbody>{expiryItems.filter(i => searchFilter(i.name)).map((item, i) => (
                     <tr key={i} className={`border-b border-border/30 ${item.expired ? "bg-destructive/5" : item.daysLeft <= 30 ? "bg-accent/5" : ""}`}>
                       <td className="py-2 text-foreground truncate">{item.name}</td>
-                      <td className="py-2 text-muted-foreground font-mono text-xs hidden sm:table-cell">{item.batch_number || "—"}</td>
-                      <td className="py-2 text-muted-foreground text-xs hidden sm:table-cell truncate">{item.manufacturer || "—"}</td>
+                      <td className="py-2 text-muted-foreground font-mono text-xs">{item.batch_number || "—"}</td>
+                      <td className="py-2 text-muted-foreground text-xs truncate">{item.manufacturer || "—"}</td>
+                      <td className="py-2 text-muted-foreground text-xs truncate">{item.supplier_id ? (suppliers.find((s: any) => s.id === item.supplier_id)?.name || "—") : "—"}</td>
                       <td className="py-2 text-right text-foreground font-medium">{Number(item.stock)}</td>
                       <td className="py-2 text-right text-muted-foreground">₹{Number(item.mrp).toFixed(0)}</td>
                       <td className="py-2 text-right text-foreground font-medium">₹{item.stockValue.toFixed(0)}</td>
