@@ -11,7 +11,7 @@ interface Item {
   id: string; name: string; sku: string | null; barcode: string | null;
   price: number; mrp: number; gst_rate: number | null; stock: number;
   category_id: string | null; unit: string | null; is_weighable: boolean | null;
-  weight_per_unit: number | null;
+  weight_per_unit: number | null; expiry_date: string | null; supplier_id: string | null;
 }
 
 interface CartItem {
@@ -197,7 +197,9 @@ export default function POS() {
   }, [items]);
 
   const filteredProducts = useMemo(() => {
-    let filtered = items;
+    // Filter out expired items
+    const today = new Date().toISOString().split('T')[0];
+    let filtered = items.filter(i => !i.expiry_date || i.expiry_date >= today);
     if (activeCategory !== "all") filtered = filtered.filter(p => p.category_id === activeCategory);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -205,6 +207,20 @@ export default function POS() {
     }
     return filtered;
   }, [items, activeCategory, searchQuery]);
+
+  // Count expired items for warning
+  const expiredCount = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return items.filter(i => i.expiry_date && i.expiry_date < today).length;
+  }, [items]);
+
+  // Near-expiry items (within 30 days)
+  const nearExpiryCount = useMemo(() => {
+    const today = new Date();
+    const threshold = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const todayStr = today.toISOString().split('T')[0];
+    return items.filter(i => i.expiry_date && i.expiry_date >= todayStr && i.expiry_date <= threshold).length;
+  }, [items]);
 
   const addToCart = (item: Item, loose = false) => {
     const unitPrice = loose && item.weight_per_unit && item.weight_per_unit > 0
@@ -602,6 +618,16 @@ export default function POS() {
         <div className="flex items-center gap-3 ml-10 md:ml-0">
           <h2 className="text-sm font-bold text-foreground">POS</h2>
           <span className="text-xs text-muted-foreground font-mono">{billNo}</span>
+          {expiredCount > 0 && (
+            <button onClick={() => window.location.href = '/reports'} className="px-2 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive border border-destructive/20 animate-pulse" title="View expired items in Reports > Expiry">
+              ⚠️ {expiredCount} expired
+            </button>
+          )}
+          {nearExpiryCount > 0 && (
+            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent border border-accent/20" title="Items expiring within 30 days">
+              🕐 {nearExpiryCount} expiring
+            </span>
+          )}
           <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${isOnline ? "bg-success/10 text-success border border-success/20" : "bg-accent/10 text-accent border border-accent/20"}`}>
             {isOnline ? <><Wifi className="h-3 w-3 inline mr-1" />ONLINE</> : <><WifiOff className="h-3 w-3 inline mr-1" />OFFLINE</>}
           </span>
