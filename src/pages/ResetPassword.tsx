@@ -46,8 +46,7 @@ export default function ResetPassword() {
     } else {
       setSuccess(true);
       toast.success("Password updated successfully!");
-      setTimeout(() => navigate("/dashboard"), 2000);
-
+      setTimeout(() => navigate("/"), 2000);
     }
     setLoading(false);
   };
