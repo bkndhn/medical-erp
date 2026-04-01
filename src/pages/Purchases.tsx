@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 interface PurchaseItem { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; }
+interface PurchaseItemWithUnit extends PurchaseItem { purchase_unit: string; }
 
 export default function Purchases() {
   const { tenantId } = useAuth();
@@ -15,8 +16,8 @@ export default function Purchases() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ supplier_id: "", invoice_number: "", notes: "", status: "pending" });
-  const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0 }]);
+  const [form, setForm] = useState({ supplier_id: "", invoice_number: "", notes: "", status: "pending", purchase_date: new Date().toISOString().split('T')[0] });
+  const [purchaseItems, setPurchaseItems] = useState<PurchaseItemWithUnit[]>([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip" }]);
   const [saving, setSaving] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
@@ -39,7 +40,7 @@ export default function Purchases() {
 
   useEffect(() => { fetch_(); }, [tenantId]);
 
-  const addPurchaseItem = () => setPurchaseItems(prev => [...prev, { item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0 }]);
+  const addPurchaseItem = () => setPurchaseItems(prev => [...prev, { item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip" }]);
   const removePurchaseItem = (idx: number) => { if (purchaseItems.length <= 1) return; setPurchaseItems(prev => prev.filter((_, i) => i !== idx)); };
   const updatePurchaseItem = (idx: number, field: string, value: any) => {
     setPurchaseItems(prev => prev.map((pi, i) => {
@@ -71,7 +72,7 @@ export default function Purchases() {
       if (validItems.length > 0) {
         await supabase.from("purchase_items").insert(validItems.map(pi => ({
           purchase_id: purchase.id, item_id: pi.item_id || null, item_name: pi.item_name,
-          quantity: pi.quantity, unit_price: pi.unit_price, total: pi.total,
+          quantity: pi.quantity, unit_price: pi.unit_price, total: pi.total, purchase_unit: pi.purchase_unit || "strip",
         })) as any);
 
         // Update stock if received
@@ -88,8 +89,8 @@ export default function Purchases() {
       }
 
       toast.success("Purchase recorded");
-      setShowForm(false); setPurchaseItems([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0 }]);
-      setForm({ supplier_id: "", invoice_number: "", notes: "", status: "pending" });
+      setShowForm(false); setPurchaseItems([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip" }]);
+      setForm({ supplier_id: "", invoice_number: "", notes: "", status: "pending", purchase_date: new Date().toISOString().split('T')[0] });
       fetch_();
     } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
   };
@@ -186,6 +187,7 @@ export default function Purchases() {
                 </select>
               </div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Notes</label><input type="text" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Purchase Date</label><input type="date" value={form.purchase_date} onChange={e=>setForm({...form,purchase_date:e.target.value})} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
             </div>
             <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2"><Package className="h-4 w-4 text-primary" /> Items</h4>
             <div className="space-y-2 mb-3">
@@ -195,6 +197,10 @@ export default function Purchases() {
                     <option value="">Select item</option>
                     {items.map(it => <option key={it.id} value={it.id}>{it.name}</option>)}
                   </select>
+                    <select value={pi.purchase_unit} onChange={e => updatePurchaseItem(idx, "purchase_unit", e.target.value)} className="w-16 px-1 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none">
+                      <option value="strip">Strip</option>
+                      <option value="loose">Loose</option>
+                    </select>
                   <input type="number" value={pi.quantity} onChange={e => updatePurchaseItem(idx, "quantity", parseFloat(e.target.value)||0)} placeholder="Qty" className="w-16 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
                   <input type="number" value={pi.unit_price} onChange={e => updatePurchaseItem(idx, "unit_price", parseFloat(e.target.value)||0)} placeholder="Price" className="w-20 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
                   <span className="text-xs font-semibold text-foreground w-20 text-right">₹{pi.total.toFixed(0)}</span>
