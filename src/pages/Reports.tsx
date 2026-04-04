@@ -399,6 +399,8 @@ export default function Reports() {
                     <th className="text-left py-2 text-xs text-muted-foreground">Payment</th>
                     <th className="text-left py-2 text-xs text-muted-foreground">Status</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Amount</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Cost</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Profit</th>
                     <th className="text-center py-2 text-xs text-muted-foreground">View</th>
                   </tr></thead>
                   <tbody>{searchedBills.map(s => {
