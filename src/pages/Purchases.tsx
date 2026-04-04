@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Truck, Plus, Search, X, Eye, Edit2, Save, Package } from "lucide-react";
+import { Truck, Plus, Search, X, Eye, Edit2, Save, Package, Undo2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 interface PurchaseItem { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; }
 interface PurchaseItemWithUnit extends PurchaseItem { purchase_unit: string; }
+interface ReturnLine { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; reason: string; }
 
 export default function Purchases() {
   const { tenantId } = useAuth();
