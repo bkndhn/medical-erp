@@ -129,6 +129,78 @@ export default function Purchases() {
 
   const statusColor = (s: string) => s === "received" ? "bg-success/10 text-success" : s === "cancelled" ? "bg-destructive/10 text-destructive" : s === "partial" ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground";
 
+  // Purchase Return functions
+  const openReturnForPurchase = async (purchase: any) => {
+    setReturnPurchase(purchase);
+    const { data } = await supabase.from("purchase_items").select("*").eq("purchase_id", purchase.id);
+    setReturnLines((data as any[] || []).map((pi: any) => ({
+      item_id: pi.item_id || "", item_name: pi.item_name, quantity: 0,
+      unit_price: Number(pi.unit_price), total: 0, reason: "damaged",
+    })));
+    setReturnNotes("");
+    setShowReturn(true);
+    setViewPurchase(null);
+  };
+
+  const updateReturnLine = (idx: number, field: string, value: any) => {
+    setReturnLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      const updated = { ...l, [field]: value };
+      if (field === "quantity") updated.total = value * updated.unit_price;
+      return updated;
+    }));
+  };
+
+  const submitReturn = async () => {
+    if (!tenantId || !returnPurchase) return;
+    const validLines = returnLines.filter(l => l.quantity > 0);
+    if (validLines.length === 0) { toast.error("Enter return quantities"); return; }
+    setSavingReturn(true);
+    try {
+      const totalAmount = validLines.reduce((s, l) => s + l.total, 0);
+      const { data: ret, error } = await supabase.from("purchase_returns").insert({
+        tenant_id: tenantId, supplier_id: returnPurchase.supplier_id,
+        purchase_id: returnPurchase.id, total_amount: totalAmount,
+        notes: returnNotes, status: "completed",
+      } as any).select().single();
+      if (error) throw error;
+
+      await supabase.from("purchase_return_items").insert(validLines.map(l => ({
+        return_id: ret.id, item_id: l.item_id || null, item_name: l.item_name,
+        quantity: l.quantity, unit_price: l.unit_price, total: l.total, reason: l.reason,
+      })) as any);
+
+      // Deduct stock for returned items
+      for (const l of validLines) {
+        if (l.item_id) {
+          const item = items.find(i => i.id === l.item_id);
+          if (item) {
+            await supabase.from("items").update({ stock: Math.max(0, Number(item.stock || 0) - l.quantity) } as any).eq("id", l.item_id);
+          }
+        }
+      }
+
+      // Update supplier outstanding (credit note)
+      if (returnPurchase.supplier_id) {
+        const { data: sup } = await supabase.from("suppliers").select("outstanding").eq("id", returnPurchase.supplier_id).single();
+        if (sup) {
+          await supabase.from("suppliers").update({ outstanding: Math.max(0, Number(sup.outstanding) - totalAmount) } as any).eq("id", returnPurchase.supplier_id);
+        }
+      }
+
+      toast.success(`Return of ₹${totalAmount.toFixed(0)} completed`);
+      setShowReturn(false);
+      fetch_();
+    } catch (err: any) { toast.error(err.message); } finally { setSavingReturn(false); }
+  };
+
+  const fetchReturns = async () => {
+    if (!tenantId) return;
+    const { data } = await supabase.from("purchase_returns").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+    setPurchaseReturns((data as any) || []);
+    setShowReturns(true);
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
