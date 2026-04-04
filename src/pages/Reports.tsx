@@ -405,6 +405,8 @@ export default function Reports() {
                   </tr></thead>
                   <tbody>{searchedBills.map(s => {
                     const cust = s.customer_id ? customerMap[s.customer_id] : null;
+                    const cost = Number(s.cost_total) || 0;
+                    const profit = Number(s.grand_total) - cost;
                     return (
                       <tr key={s.id} className="border-b border-border/30 hover:bg-muted/20 cursor-pointer" onClick={() => viewBill(s)}>
                         <td className="py-2 font-mono text-xs text-primary">{s.invoice_number}</td>
@@ -413,6 +415,8 @@ export default function Reports() {
                         <td className="py-2"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{s.payment_mode}</span></td>
                         <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${s.status === "completed" ? "bg-success/10 text-success" : s.status === "refunded" ? "bg-accent/10 text-accent" : s.status === "cancelled" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>{s.status}</span></td>
                         <td className="py-2 text-right font-semibold text-foreground">₹{Number(s.grand_total).toFixed(0)}</td>
+                        <td className="py-2 text-right text-xs text-muted-foreground">{cost > 0 ? `₹${cost.toFixed(0)}` : "—"}</td>
+                        <td className={`py-2 text-right text-xs font-semibold ${profit >= 0 ? "text-success" : "text-destructive"}`}>{cost > 0 ? `₹${profit.toFixed(0)}` : "—"}</td>
                         <td className="py-2 text-center"><Eye className="h-4 w-4 text-muted-foreground inline hover:text-primary" /></td>
                       </tr>
                     );
