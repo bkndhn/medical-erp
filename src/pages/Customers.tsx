@@ -92,7 +92,7 @@ export default function Customers() {
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search customers..." className="w-full pl-9 pr-4 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
           </div>
           <DateFilterExport
-            defaultPreset="all_time"
+            defaultPreset="today"
             onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }}
             onExportExcel={() => exportToExcel(filtered.map(c => ({ Name: c.name, Phone: c.phone || "", Email: c.email || "", GST: c.gst_number || "", CreditLimit: Number(c.credit_limit).toFixed(2), Outstanding: Number(c.outstanding).toFixed(2) })), "customers")}
             onExportPDF={() => exportToPDF("Customers", ["Name", "Phone", "Email", "Credit Limit", "Outstanding"], filtered.map(c => [c.name, c.phone || "—", c.email || "—", `₹${Number(c.credit_limit).toFixed(0)}`, `₹${Number(c.outstanding).toFixed(0)}`]))}

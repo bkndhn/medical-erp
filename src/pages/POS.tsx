@@ -624,9 +624,9 @@ export default function POS() {
             </button>
           )}
           {nearExpiryCount > 0 && (
-            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent border border-accent/20" title="Items expiring within 30 days">
+            <button onClick={() => window.location.href = '/reports?tab=expiry'} className="px-2 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent border border-accent/20 cursor-pointer hover:bg-accent/20 transition-colors" title="View expiring items in Reports > Expiry">
               🕐 {nearExpiryCount} expiring
-            </span>
+            </button>
           )}
           <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${isOnline ? "bg-success/10 text-success border border-success/20" : "bg-accent/10 text-accent border border-accent/20"}`}>
             {isOnline ? <><Wifi className="h-3 w-3 inline mr-1" />ONLINE</> : <><WifiOff className="h-3 w-3 inline mr-1" />OFFLINE</>}

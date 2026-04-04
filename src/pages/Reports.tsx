@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare, Search, CreditCard, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
@@ -21,7 +22,9 @@ export default function Reports() {
   const [devices, setDevices] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [searchParams] = useSearchParams();
+  const initialTab = (searchParams.get("tab") as Tab) || "overview";
+  const [tab, setTab] = useState<Tab>(TABS.includes(initialTab as Tab) ? initialTab : "overview");
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
