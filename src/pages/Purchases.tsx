@@ -209,9 +209,14 @@ export default function Purchases() {
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Truck className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Purchases</h1>
             <p className="text-sm text-muted-foreground">{filtered.length} purchase orders</p>
           </div>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
-            <Plus className="h-4 w-4" /> New Purchase
-          </button>
+          <div className="flex gap-2">
+            <button onClick={fetchReturns} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent/10 text-accent text-sm font-medium hover:bg-accent/20 border border-accent/20 touch-manipulation">
+              <Undo2 className="h-4 w-4" /> Returns
+            </button>
+            <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
+              <Plus className="h-4 w-4" /> New Purchase
+            </button>
+          </div>
         </div>
         <div className="mt-3 flex flex-col gap-3">
           <div className="relative max-w-md">
