@@ -382,11 +382,18 @@ export default function POS() {
     const cashLine = paymentLines.find(l => l.mode === "cash");
     const changeAmount = cashLine ? Math.max(0, totalPaid - roundedTotal) : 0;
 
+    const costTotal = cart.reduce((s, ci) => {
+      const costPrice = Number(ci.item.cost_price || 0);
+      const qty = ci.isLoose && ci.item.weight_per_unit ? ci.quantity / ci.item.weight_per_unit : ci.quantity;
+      return s + costPrice * qty;
+    }, 0);
+
     const saleData = {
       tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
       invoice_number: billNo, subtotal, discount: billDiscount, tax_total: gstTotal,
       grand_total: roundedTotal, payment_mode: primaryMode as any,
       amount_paid: totalPaid, change_amount: changeAmount, status: "completed" as any,
+      cost_total: Math.round(costTotal * 100) / 100,
       notes: customerName ? `Customer: ${customerName}${customerPhone ? ` (${customerPhone})` : ""}` : null,
     };
 
