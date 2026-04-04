@@ -328,6 +328,74 @@ export default function Purchases() {
           </div>
         </div>
       )}
+
+      {/* Purchase Return Form */}
+      {showReturn && returnPurchase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowReturn(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-2xl mx-4 animate-fade-in max-h-[90vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><Undo2 className="h-5 w-5 text-accent" /> Return to Supplier</h3>
+                <p className="text-xs text-muted-foreground">{returnPurchase.invoice_number} • {supplierName(returnPurchase.supplier_id)}</p>
+              </div>
+              <button onClick={() => setShowReturn(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">Enter return quantities for items to send back to supplier:</p>
+            <div className="space-y-2 mb-4">
+              {returnLines.map((l, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <span className="flex-1 text-sm text-foreground">{l.item_name}</span>
+                  <select value={l.reason} onChange={e => updateReturnLine(idx, "reason", e.target.value)} className="w-24 px-1 py-1.5 rounded bg-muted border border-border text-xs text-foreground">
+                    <option value="damaged">Damaged</option>
+                    <option value="expired">Expired</option>
+                    <option value="wrong_item">Wrong Item</option>
+                    <option value="excess">Excess</option>
+                  </select>
+                  <input type="number" value={l.quantity || ""} onChange={e => updateReturnLine(idx, "quantity", parseFloat(e.target.value) || 0)} placeholder="Qty" min="0" className="w-20 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
+                  <span className="text-xs font-semibold text-foreground w-20 text-right">₹{l.total.toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mb-4">
+              <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
+              <input type="text" value={returnNotes} onChange={e => setReturnNotes(e.target.value)} placeholder="Reason for return..." className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+            </div>
+            <div className="flex justify-between items-center border-t border-border pt-3 mb-4">
+              <span className="text-sm font-semibold text-foreground">Credit Note Total</span>
+              <span className="text-lg font-bold text-accent">₹{returnLines.reduce((s, l) => s + l.total, 0).toFixed(0)}</span>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowReturn(false)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium">Cancel</button>
+              <button onClick={submitReturn} disabled={savingReturn || returnLines.every(l => l.quantity <= 0)} className="flex-1 py-2.5 rounded-lg bg-accent text-accent-foreground text-sm font-medium disabled:opacity-50">{savingReturn ? "Processing..." : "Submit Return"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Purchase Returns List */}
+      {showReturns && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowReturns(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 animate-fade-in max-h-[85vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><Undo2 className="h-5 w-5 text-accent" /> Purchase Returns</h3>
+              <button onClick={() => setShowReturns(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            {purchaseReturns.length === 0 ? <p className="text-center text-muted-foreground py-8">No returns yet</p> :
+            <div className="space-y-2">
+              {purchaseReturns.map(r => (
+                <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{supplierName(r.supplier_id)}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()} • {r.status}</p>
+                    {r.notes && <p className="text-xs text-muted-foreground italic mt-0.5">{r.notes}</p>}
+                  </div>
+                  <span className="text-sm font-bold text-accent">₹{Number(r.total_amount).toFixed(0)}</span>
+                </div>
+              ))}
+            </div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
