@@ -24,6 +24,14 @@ export default function Purchases() {
   const [dateTo, setDateTo] = useState<Date | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any>(null);
   const [viewItems, setViewItems] = useState<any[]>([]);
+  // Purchase Returns
+  const [showReturn, setShowReturn] = useState(false);
+  const [returnPurchase, setReturnPurchase] = useState<any>(null);
+  const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
+  const [returnNotes, setReturnNotes] = useState("");
+  const [savingReturn, setSavingReturn] = useState(false);
+  const [purchaseReturns, setPurchaseReturns] = useState<any[]>([]);
+  const [showReturns, setShowReturns] = useState(false);
 
   const fetch_ = async () => {
     if (!tenantId) return;
