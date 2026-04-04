@@ -12,6 +12,7 @@ interface Item {
   price: number; mrp: number; gst_rate: number | null; stock: number;
   category_id: string | null; unit: string | null; is_weighable: boolean | null;
   weight_per_unit: number | null; expiry_date: string | null; supplier_id: string | null;
+  cost_price: number | null;
 }
 
 interface CartItem {
