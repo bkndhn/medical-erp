@@ -382,10 +382,11 @@ export default function Reports() {
 
           {/* Bills Tab */}
           {tab === "bills" && <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Bills</p><p className="text-2xl font-bold text-foreground mt-1">{searchedBills.length}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Revenue</p><p className="text-2xl font-bold text-primary mt-1">₹{searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total), 0).toLocaleString()}</p></div>
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Refunds</p><p className="text-2xl font-bold text-destructive mt-1">₹{searchedBills.filter(s => s.status === "refunded").reduce((s, x) => s + Number(x.grand_total), 0).toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Cost</p><p className="text-2xl font-bold text-foreground mt-1">₹{searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + (Number(x.cost_total) || 0), 0).toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Profit</p><p className={`text-2xl font-bold mt-1 ${searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total) - (Number(x.cost_total) || 0), 0) >= 0 ? "text-success" : "text-destructive"}`}>₹{searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total) - (Number(x.cost_total) || 0), 0).toLocaleString()}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Discount Given</p><p className="text-2xl font-bold text-accent mt-1">₹{totalDiscount.toLocaleString()}</p></div>
             </div>
             <div className="glass-card rounded-xl p-5">
