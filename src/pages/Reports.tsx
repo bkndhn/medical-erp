@@ -382,10 +382,11 @@ export default function Reports() {
 
           {/* Bills Tab */}
           {tab === "bills" && <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-4">
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Bills</p><p className="text-2xl font-bold text-foreground mt-1">{searchedBills.length}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Revenue</p><p className="text-2xl font-bold text-primary mt-1">₹{searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total), 0).toLocaleString()}</p></div>
-              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Refunds</p><p className="text-2xl font-bold text-destructive mt-1">₹{searchedBills.filter(s => s.status === "refunded").reduce((s, x) => s + Number(x.grand_total), 0).toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Cost</p><p className="text-2xl font-bold text-foreground mt-1">₹{searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + (Number(x.cost_total) || 0), 0).toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Profit</p><p className={`text-2xl font-bold mt-1 ${searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total) - (Number(x.cost_total) || 0), 0) >= 0 ? "text-success" : "text-destructive"}`}>₹{searchedBills.filter(s => s.status === "completed").reduce((s, x) => s + Number(x.grand_total) - (Number(x.cost_total) || 0), 0).toLocaleString()}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Discount Given</p><p className="text-2xl font-bold text-accent mt-1">₹{totalDiscount.toLocaleString()}</p></div>
             </div>
             <div className="glass-card rounded-xl p-5">
@@ -399,10 +400,14 @@ export default function Reports() {
                     <th className="text-left py-2 text-xs text-muted-foreground">Payment</th>
                     <th className="text-left py-2 text-xs text-muted-foreground">Status</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Amount</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Cost</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Profit</th>
                     <th className="text-center py-2 text-xs text-muted-foreground">View</th>
                   </tr></thead>
                   <tbody>{searchedBills.map(s => {
                     const cust = s.customer_id ? customerMap[s.customer_id] : null;
+                    const cost = Number(s.cost_total) || 0;
+                    const profit = Number(s.grand_total) - cost;
                     return (
                       <tr key={s.id} className="border-b border-border/30 hover:bg-muted/20 cursor-pointer" onClick={() => viewBill(s)}>
                         <td className="py-2 font-mono text-xs text-primary">{s.invoice_number}</td>
@@ -411,6 +416,8 @@ export default function Reports() {
                         <td className="py-2"><span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground uppercase">{s.payment_mode}</span></td>
                         <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${s.status === "completed" ? "bg-success/10 text-success" : s.status === "refunded" ? "bg-accent/10 text-accent" : s.status === "cancelled" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground"}`}>{s.status}</span></td>
                         <td className="py-2 text-right font-semibold text-foreground">₹{Number(s.grand_total).toFixed(0)}</td>
+                        <td className="py-2 text-right text-xs text-muted-foreground">{cost > 0 ? `₹${cost.toFixed(0)}` : "—"}</td>
+                        <td className={`py-2 text-right text-xs font-semibold ${profit >= 0 ? "text-success" : "text-destructive"}`}>{cost > 0 ? `₹${profit.toFixed(0)}` : "—"}</td>
                         <td className="py-2 text-center"><Eye className="h-4 w-4 text-muted-foreground inline hover:text-primary" /></td>
                       </tr>
                     );

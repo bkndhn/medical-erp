@@ -184,6 +184,45 @@ export type Database = {
           },
         ]
       }
+      customer_ledger: {
+        Row: {
+          amount: number
+          balance_after: number
+          created_at: string
+          customer_id: string
+          description: string | null
+          id: string
+          reference_id: string | null
+          reference_type: string | null
+          tenant_id: string
+          type: string
+        }
+        Insert: {
+          amount?: number
+          balance_after?: number
+          created_at?: string
+          customer_id: string
+          description?: string | null
+          id?: string
+          reference_id?: string | null
+          reference_type?: string | null
+          tenant_id: string
+          type: string
+        }
+        Update: {
+          amount?: number
+          balance_after?: number
+          created_at?: string
+          customer_id?: string
+          description?: string | null
+          id?: string
+          reference_id?: string | null
+          reference_type?: string | null
+          tenant_id?: string
+          type?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           address: string | null
@@ -733,6 +772,75 @@ export type Database = {
           },
         ]
       }
+      purchase_return_items: {
+        Row: {
+          id: string
+          item_id: string | null
+          item_name: string
+          quantity: number
+          reason: string | null
+          return_id: string
+          total: number
+          unit_price: number
+        }
+        Insert: {
+          id?: string
+          item_id?: string | null
+          item_name: string
+          quantity?: number
+          reason?: string | null
+          return_id: string
+          total?: number
+          unit_price?: number
+        }
+        Update: {
+          id?: string
+          item_id?: string | null
+          item_name?: string
+          quantity?: number
+          reason?: string | null
+          return_id?: string
+          total?: number
+          unit_price?: number
+        }
+        Relationships: []
+      }
+      purchase_returns: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          purchase_id: string | null
+          return_date: string | null
+          status: string
+          supplier_id: string | null
+          tenant_id: string
+          total_amount: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          purchase_id?: string | null
+          return_date?: string | null
+          status?: string
+          supplier_id?: string | null
+          tenant_id: string
+          total_amount?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          purchase_id?: string | null
+          return_date?: string | null
+          status?: string
+          supplier_id?: string | null
+          tenant_id?: string
+          total_amount?: number
+        }
+        Relationships: []
+      }
       purchases: {
         Row: {
           branch_id: string | null
@@ -857,6 +965,7 @@ export type Database = {
           branch_id: string | null
           cashier_id: string | null
           change_amount: number | null
+          cost_total: number | null
           created_at: string
           customer_id: string | null
           device_id: string | null
@@ -876,6 +985,7 @@ export type Database = {
           branch_id?: string | null
           cashier_id?: string | null
           change_amount?: number | null
+          cost_total?: number | null
           created_at?: string
           customer_id?: string | null
           device_id?: string | null
@@ -895,6 +1005,7 @@ export type Database = {
           branch_id?: string | null
           cashier_id?: string | null
           change_amount?: number | null
+          cost_total?: number | null
           created_at?: string
           customer_id?: string | null
           device_id?: string | null

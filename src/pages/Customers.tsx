@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart, FileText } from "lucide-react";
+import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart, FileText, BookOpen, ArrowUpCircle, ArrowDownCircle, Download } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
@@ -9,6 +9,11 @@ interface Customer {
   id: string; name: string; phone: string | null; email: string | null;
   address: string | null; gst_number: string | null; credit_limit: number; outstanding: number;
   created_at: string;
+}
+
+interface LedgerEntry {
+  id: string; type: string; amount: number; balance_after: number;
+  description: string | null; reference_type: string | null; created_at: string;
 }
 
 export default function Customers() {
@@ -21,10 +26,15 @@ export default function Customers() {
   const [saving, setSaving] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
-  // Purchase history
   const [viewCustomer, setViewCustomer] = useState<Customer | null>(null);
   const [customerSales, setCustomerSales] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // Ledger
+  const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [loadingLedger, setLoadingLedger] = useState(false);
+  const [showAddEntry, setShowAddEntry] = useState(false);
+  const [entryForm, setEntryForm] = useState({ type: "credit", amount: 0, description: "" });
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -74,6 +84,57 @@ export default function Customers() {
     setLoadingHistory(false);
   };
 
+  // Ledger functions
+  const openLedger = async (customer: Customer) => {
+    setLedgerCustomer(customer);
+    setLoadingLedger(true);
+    const { data } = await supabase.from("customer_ledger").select("*").eq("customer_id", customer.id).order("created_at", { ascending: false }).limit(200);
+    setLedgerEntries((data as any) || []);
+    setLoadingLedger(false);
+  };
+
+  const addLedgerEntry = async () => {
+    if (!ledgerCustomer || !tenantId || entryForm.amount <= 0) return;
+    setSaving(true);
+    try {
+      const currentOutstanding = Number(ledgerCustomer.outstanding) || 0;
+      const newBalance = entryForm.type === "debit"
+        ? currentOutstanding + entryForm.amount
+        : currentOutstanding - entryForm.amount;
+
+      await supabase.from("customer_ledger").insert({
+        tenant_id: tenantId, customer_id: ledgerCustomer.id,
+        type: entryForm.type, amount: entryForm.amount,
+        balance_after: newBalance, description: entryForm.description || null,
+        reference_type: "adjustment",
+      } as any);
+
+      await supabase.from("customers").update({ outstanding: newBalance } as any).eq("id", ledgerCustomer.id);
+
+      toast.success(`${entryForm.type === "credit" ? "Payment received" : "Amount added"}`);
+      setShowAddEntry(false);
+      setEntryForm({ type: "credit", amount: 0, description: "" });
+      setLedgerCustomer({ ...ledgerCustomer, outstanding: newBalance });
+      openLedger({ ...ledgerCustomer, outstanding: newBalance });
+      fetch_();
+    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
+  };
+
+  const exportLedgerStatement = () => {
+    if (!ledgerCustomer || ledgerEntries.length === 0) return;
+    exportToPDF(
+      `Statement - ${ledgerCustomer.name}`,
+      ["Date", "Type", "Amount", "Balance", "Description"],
+      ledgerEntries.map(e => [
+        new Date(e.created_at).toLocaleDateString(),
+        e.type.toUpperCase(),
+        `₹${Number(e.amount).toFixed(2)}`,
+        `₹${Number(e.balance_after).toFixed(2)}`,
+        e.description || "—",
+      ])
+    );
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
@@ -116,7 +177,8 @@ export default function Customers() {
               <td className="py-3 px-3 text-muted-foreground hidden sm:table-cell">{c.email || "—"}</td>
               <td className="py-3 px-3 text-right"><span className={Number(c.outstanding) > 0 ? "text-accent font-semibold" : "text-muted-foreground"}>₹{Number(c.outstanding).toFixed(0)}</span></td>
               <td className="py-3 px-3 text-right"><div className="flex items-center justify-end gap-1">
-                <button onClick={() => viewHistory(c)} className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary" title="View history"><Eye className="h-3.5 w-3.5" /></button>
+                <button onClick={() => openLedger(c)} className="p-1.5 rounded hover:bg-accent/10 text-muted-foreground hover:text-accent" title="Ledger"><BookOpen className="h-3.5 w-3.5" /></button>
+                <button onClick={() => viewHistory(c)} className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary" title="Purchase history"><Eye className="h-3.5 w-3.5" /></button>
                 <button onClick={() => { setEditItem(c); setShowForm(true); }} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
                 <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
               </div></td>
@@ -171,6 +233,105 @@ export default function Customers() {
                   <span className="text-sm font-bold text-primary">₹{Number(s.grand_total).toFixed(0)}</span>
                 </div>
               ))}
+            </div>}
+          </div>
+        </div>
+      )}
+
+      {/* Customer Ledger */}
+      {ledgerCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setLedgerCustomer(null)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-2xl mx-4 animate-fade-in max-h-[90vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><BookOpen className="h-5 w-5 text-primary" /> Ledger</h3>
+                <p className="text-sm text-muted-foreground">{ledgerCustomer.name} • {ledgerCustomer.phone || ""}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={exportLedgerStatement} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground border border-border" title="Print statement">
+                  <Download className="h-3 w-3" /> Statement
+                </button>
+                <button onClick={() => setLedgerCustomer(null)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="glass-card rounded-lg p-3 text-center">
+                <p className="text-[10px] text-muted-foreground uppercase">Credit Limit</p>
+                <p className="text-lg font-bold text-foreground">₹{Number(ledgerCustomer.credit_limit).toLocaleString()}</p>
+              </div>
+              <div className="glass-card rounded-lg p-3 text-center">
+                <p className="text-[10px] text-muted-foreground uppercase">Outstanding</p>
+                <p className={`text-lg font-bold ${Number(ledgerCustomer.outstanding) > 0 ? "text-accent" : "text-success"}`}>₹{Number(ledgerCustomer.outstanding).toLocaleString()}</p>
+              </div>
+              <div className="glass-card rounded-lg p-3 text-center">
+                <p className="text-[10px] text-muted-foreground uppercase">Available</p>
+                <p className="text-lg font-bold text-success">₹{Math.max(0, Number(ledgerCustomer.credit_limit) - Number(ledgerCustomer.outstanding)).toLocaleString()}</p>
+              </div>
+            </div>
+
+            {/* Add Entry */}
+            <div className="flex gap-2 mb-4">
+              <button onClick={() => { setShowAddEntry(true); setEntryForm({ type: "credit", amount: 0, description: "Payment received" }); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-success/10 text-success hover:bg-success/20 border border-success/20">
+                <ArrowDownCircle className="h-3.5 w-3.5" /> Receive Payment
+              </button>
+              <button onClick={() => { setShowAddEntry(true); setEntryForm({ type: "debit", amount: 0, description: "Credit sale" }); }} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20">
+                <ArrowUpCircle className="h-3.5 w-3.5" /> Add Debit
+              </button>
+            </div>
+
+            {/* Add Entry Form */}
+            {showAddEntry && (
+              <div className="glass-card rounded-xl p-4 mb-4 border border-primary/20">
+                <h4 className="text-sm font-semibold text-foreground mb-3">{entryForm.type === "credit" ? "Receive Payment" : "Add Debit"}</h4>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Amount *</label>
+                    <input type="number" value={entryForm.amount || ""} onChange={e => setEntryForm({ ...entryForm, amount: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" placeholder="0.00" autoFocus />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Description</label>
+                    <input type="text" value={entryForm.description} onChange={e => setEntryForm({ ...entryForm, description: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowAddEntry(false)} className="px-4 py-2 rounded-lg bg-muted text-muted-foreground text-xs">Cancel</button>
+                  <button onClick={addLedgerEntry} disabled={saving || entryForm.amount <= 0} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50">{saving ? "Saving..." : "Save Entry"}</button>
+                </div>
+              </div>
+            )}
+
+            {/* Ledger Table */}
+            {loadingLedger ? <div className="text-center text-muted-foreground py-8">Loading...</div> :
+            ledgerEntries.length === 0 ? <p className="text-center text-muted-foreground py-8">No ledger entries yet</p> :
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border">
+                  <th className="text-left py-2 px-2 text-xs text-muted-foreground">Date</th>
+                  <th className="text-left py-2 px-2 text-xs text-muted-foreground">Description</th>
+                  <th className="text-left py-2 px-2 text-xs text-muted-foreground">Type</th>
+                  <th className="text-right py-2 px-2 text-xs text-muted-foreground">Amount</th>
+                  <th className="text-right py-2 px-2 text-xs text-muted-foreground">Balance</th>
+                </tr></thead>
+                <tbody>
+                  {ledgerEntries.map(e => (
+                    <tr key={e.id} className="border-b border-border/30">
+                      <td className="py-2 px-2 text-xs text-muted-foreground">{new Date(e.created_at).toLocaleDateString()}</td>
+                      <td className="py-2 px-2 text-xs text-foreground">{e.description || "—"}</td>
+                      <td className="py-2 px-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${e.type === "credit" ? "bg-success/10 text-success" : "bg-accent/10 text-accent"}`}>
+                          {e.type === "credit" ? "CR" : "DR"}
+                        </span>
+                      </td>
+                      <td className={`py-2 px-2 text-right text-xs font-semibold ${e.type === "credit" ? "text-success" : "text-accent"}`}>
+                        {e.type === "credit" ? "−" : "+"}₹{Number(e.amount).toFixed(2)}
+                      </td>
+                      <td className="py-2 px-2 text-right text-xs font-mono text-foreground">₹{Number(e.balance_after).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>}
           </div>
         </div>

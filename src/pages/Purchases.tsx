@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Truck, Plus, Search, X, Eye, Edit2, Save, Package } from "lucide-react";
+import { Truck, Plus, Search, X, Eye, Edit2, Save, Package, Undo2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 interface PurchaseItem { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; }
 interface PurchaseItemWithUnit extends PurchaseItem { purchase_unit: string; }
+interface ReturnLine { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; reason: string; }
 
 export default function Purchases() {
   const { tenantId } = useAuth();
@@ -23,6 +24,14 @@ export default function Purchases() {
   const [dateTo, setDateTo] = useState<Date | null>(null);
   const [viewPurchase, setViewPurchase] = useState<any>(null);
   const [viewItems, setViewItems] = useState<any[]>([]);
+  // Purchase Returns
+  const [showReturn, setShowReturn] = useState(false);
+  const [returnPurchase, setReturnPurchase] = useState<any>(null);
+  const [returnLines, setReturnLines] = useState<ReturnLine[]>([]);
+  const [returnNotes, setReturnNotes] = useState("");
+  const [savingReturn, setSavingReturn] = useState(false);
+  const [purchaseReturns, setPurchaseReturns] = useState<any[]>([]);
+  const [showReturns, setShowReturns] = useState(false);
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -120,6 +129,78 @@ export default function Purchases() {
 
   const statusColor = (s: string) => s === "received" ? "bg-success/10 text-success" : s === "cancelled" ? "bg-destructive/10 text-destructive" : s === "partial" ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground";
 
+  // Purchase Return functions
+  const openReturnForPurchase = async (purchase: any) => {
+    setReturnPurchase(purchase);
+    const { data } = await supabase.from("purchase_items").select("*").eq("purchase_id", purchase.id);
+    setReturnLines((data as any[] || []).map((pi: any) => ({
+      item_id: pi.item_id || "", item_name: pi.item_name, quantity: 0,
+      unit_price: Number(pi.unit_price), total: 0, reason: "damaged",
+    })));
+    setReturnNotes("");
+    setShowReturn(true);
+    setViewPurchase(null);
+  };
+
+  const updateReturnLine = (idx: number, field: string, value: any) => {
+    setReturnLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      const updated = { ...l, [field]: value };
+      if (field === "quantity") updated.total = value * updated.unit_price;
+      return updated;
+    }));
+  };
+
+  const submitReturn = async () => {
+    if (!tenantId || !returnPurchase) return;
+    const validLines = returnLines.filter(l => l.quantity > 0);
+    if (validLines.length === 0) { toast.error("Enter return quantities"); return; }
+    setSavingReturn(true);
+    try {
+      const totalAmount = validLines.reduce((s, l) => s + l.total, 0);
+      const { data: ret, error } = await supabase.from("purchase_returns").insert({
+        tenant_id: tenantId, supplier_id: returnPurchase.supplier_id,
+        purchase_id: returnPurchase.id, total_amount: totalAmount,
+        notes: returnNotes, status: "completed",
+      } as any).select().single();
+      if (error) throw error;
+
+      await supabase.from("purchase_return_items").insert(validLines.map(l => ({
+        return_id: ret.id, item_id: l.item_id || null, item_name: l.item_name,
+        quantity: l.quantity, unit_price: l.unit_price, total: l.total, reason: l.reason,
+      })) as any);
+
+      // Deduct stock for returned items
+      for (const l of validLines) {
+        if (l.item_id) {
+          const item = items.find(i => i.id === l.item_id);
+          if (item) {
+            await supabase.from("items").update({ stock: Math.max(0, Number(item.stock || 0) - l.quantity) } as any).eq("id", l.item_id);
+          }
+        }
+      }
+
+      // Update supplier outstanding (credit note)
+      if (returnPurchase.supplier_id) {
+        const { data: sup } = await supabase.from("suppliers").select("outstanding").eq("id", returnPurchase.supplier_id).single();
+        if (sup) {
+          await supabase.from("suppliers").update({ outstanding: Math.max(0, Number(sup.outstanding) - totalAmount) } as any).eq("id", returnPurchase.supplier_id);
+        }
+      }
+
+      toast.success(`Return of ₹${totalAmount.toFixed(0)} completed`);
+      setShowReturn(false);
+      fetch_();
+    } catch (err: any) { toast.error(err.message); } finally { setSavingReturn(false); }
+  };
+
+  const fetchReturns = async () => {
+    if (!tenantId) return;
+    const { data } = await supabase.from("purchase_returns").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+    setPurchaseReturns((data as any) || []);
+    setShowReturns(true);
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
@@ -128,9 +209,14 @@ export default function Purchases() {
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Truck className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Purchases</h1>
             <p className="text-sm text-muted-foreground">{filtered.length} purchase orders</p>
           </div>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
-            <Plus className="h-4 w-4" /> New Purchase
-          </button>
+          <div className="flex gap-2">
+            <button onClick={fetchReturns} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent/10 text-accent text-sm font-medium hover:bg-accent/20 border border-accent/20 touch-manipulation">
+              <Undo2 className="h-4 w-4" /> Returns
+            </button>
+            <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
+              <Plus className="h-4 w-4" /> New Purchase
+            </button>
+          </div>
         </div>
         <div className="mt-3 flex flex-col gap-3">
           <div className="relative max-w-md">
@@ -233,11 +319,80 @@ export default function Purchases() {
               <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${statusColor(viewPurchase.status)}`}>{viewPurchase.status}</span>
               {viewPurchase.status !== "received" && <button onClick={() => updateStatus(viewPurchase.id, "received")} className="px-2 py-0.5 rounded text-[10px] font-medium bg-success/10 text-success hover:bg-success/20">Mark Received</button>}
               {viewPurchase.status !== "cancelled" && <button onClick={() => updateStatus(viewPurchase.id, "cancelled")} className="px-2 py-0.5 rounded text-[10px] font-medium bg-destructive/10 text-destructive hover:bg-destructive/20">Cancel</button>}
+              {viewPurchase.status === "received" && <button onClick={() => openReturnForPurchase(viewPurchase)} className="px-2 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent hover:bg-accent/20">Return Items</button>}
             </div>
             <table className="w-full text-sm mb-4"><thead><tr className="border-b border-border"><th className="text-left py-2 text-xs text-muted-foreground">Item</th><th className="text-right py-2 text-xs text-muted-foreground">Qty</th><th className="text-right py-2 text-xs text-muted-foreground">Price</th><th className="text-right py-2 text-xs text-muted-foreground">Total</th></tr></thead>
               <tbody>{viewItems.map(vi => (<tr key={vi.id} className="border-b border-border/30"><td className="py-2 text-foreground text-xs">{vi.item_name}</td><td className="py-2 text-right text-muted-foreground text-xs">{vi.quantity}</td><td className="py-2 text-right text-muted-foreground text-xs">₹{Number(vi.unit_price).toFixed(2)}</td><td className="py-2 text-right font-medium text-foreground text-xs">₹{Number(vi.total).toFixed(2)}</td></tr>))}</tbody>
             </table>
             <div className="flex justify-between text-lg font-bold border-t border-border pt-3"><span className="text-foreground">Total</span><span className="text-primary">₹{Number(viewPurchase.grand_total).toFixed(0)}</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* Purchase Return Form */}
+      {showReturn && returnPurchase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowReturn(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-2xl mx-4 animate-fade-in max-h-[90vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><Undo2 className="h-5 w-5 text-accent" /> Return to Supplier</h3>
+                <p className="text-xs text-muted-foreground">{returnPurchase.invoice_number} • {supplierName(returnPurchase.supplier_id)}</p>
+              </div>
+              <button onClick={() => setShowReturn(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">Enter return quantities for items to send back to supplier:</p>
+            <div className="space-y-2 mb-4">
+              {returnLines.map((l, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <span className="flex-1 text-sm text-foreground">{l.item_name}</span>
+                  <select value={l.reason} onChange={e => updateReturnLine(idx, "reason", e.target.value)} className="w-24 px-1 py-1.5 rounded bg-muted border border-border text-xs text-foreground">
+                    <option value="damaged">Damaged</option>
+                    <option value="expired">Expired</option>
+                    <option value="wrong_item">Wrong Item</option>
+                    <option value="excess">Excess</option>
+                  </select>
+                  <input type="number" value={l.quantity || ""} onChange={e => updateReturnLine(idx, "quantity", parseFloat(e.target.value) || 0)} placeholder="Qty" min="0" className="w-20 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
+                  <span className="text-xs font-semibold text-foreground w-20 text-right">₹{l.total.toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mb-4">
+              <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
+              <input type="text" value={returnNotes} onChange={e => setReturnNotes(e.target.value)} placeholder="Reason for return..." className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+            </div>
+            <div className="flex justify-between items-center border-t border-border pt-3 mb-4">
+              <span className="text-sm font-semibold text-foreground">Credit Note Total</span>
+              <span className="text-lg font-bold text-accent">₹{returnLines.reduce((s, l) => s + l.total, 0).toFixed(0)}</span>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowReturn(false)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium">Cancel</button>
+              <button onClick={submitReturn} disabled={savingReturn || returnLines.every(l => l.quantity <= 0)} className="flex-1 py-2.5 rounded-lg bg-accent text-accent-foreground text-sm font-medium disabled:opacity-50">{savingReturn ? "Processing..." : "Submit Return"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Purchase Returns List */}
+      {showReturns && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowReturns(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-lg mx-4 animate-fade-in max-h-[85vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><Undo2 className="h-5 w-5 text-accent" /> Purchase Returns</h3>
+              <button onClick={() => setShowReturns(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            {purchaseReturns.length === 0 ? <p className="text-center text-muted-foreground py-8">No returns yet</p> :
+            <div className="space-y-2">
+              {purchaseReturns.map(r => (
+                <div key={r.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{supplierName(r.supplier_id)}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(r.created_at).toLocaleDateString()} • {r.status}</p>
+                    {r.notes && <p className="text-xs text-muted-foreground italic mt-0.5">{r.notes}</p>}
+                  </div>
+                  <span className="text-sm font-bold text-accent">₹{Number(r.total_amount).toFixed(0)}</span>
+                </div>
+              ))}
+            </div>}
           </div>
         </div>
       )}
