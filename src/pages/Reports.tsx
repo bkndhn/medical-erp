@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+
 import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare, Search, CreditCard, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from "recharts";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
@@ -21,6 +22,7 @@ export default function Reports() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [paymentRecords, setPaymentRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchParams] = useSearchParams();
   const initialTab = (searchParams.get("tab") as Tab) || "overview";
@@ -45,10 +47,11 @@ export default function Reports() {
       supabase.from("purchases").select("*, supplier_id").eq("tenant_id", tenantId),
       supabase.from("devices").select("*").eq("tenant_id", tenantId),
       supabase.from("customers").select("id, name, phone").eq("tenant_id", tenantId),
-    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }, { data: cust }]) => {
+      supabase.from("payments").select("*").eq("tenant_id", tenantId),
+    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }, { data: cust }, { data: pay }]) => {
       setSales((s as any) || []); setSaleItems((si as any) || []); setItems((i as any) || []);
       setExpenses((e as any) || []); setSuppliers((sup as any) || []); setPurchases((p as any) || []);
-      setDevices((dev as any) || []); setCustomers((cust as any) || []); setLoading(false);
+      setDevices((dev as any) || []); setCustomers((cust as any) || []); setPaymentRecords((pay as any) || []); setLoading(false);
     });
   }, [tenantId]);
 
@@ -83,22 +86,50 @@ export default function Reports() {
   const grossProfit = netSales - costOfGoods;
   const netProfit = netSales - totalExpenses - costOfGoods;
 
+  // Use payments table to get actual payment mode breakdown (resolves split payments)
+  const filteredPaymentRecords = useMemo(() => {
+    const saleIds = new Set(filteredSales.filter(s => s.status === "completed").map(s => s.id));
+    return paymentRecords.filter(p => p.sale_id && saleIds.has(p.sale_id));
+  }, [paymentRecords, filteredSales]);
+
   const paymentData = useMemo(() => {
     const breakdown: Record<string, number> = {};
-    filteredSales.filter(s => s.status === "completed").forEach(s => { breakdown[s.payment_mode] = (breakdown[s.payment_mode] || 0) + Number(s.grand_total); });
+    // Use payment records for accurate mode-wise totals (split payments resolved)
+    if (filteredPaymentRecords.length > 0) {
+      filteredPaymentRecords.forEach(p => {
+        const mode = (p.payment_mode || "cash").toLowerCase();
+        if (mode !== "split") { breakdown[mode] = (breakdown[mode] || 0) + Number(p.amount); }
+      });
+    } else {
+      // Fallback: use sales table directly for non-split
+      filteredSales.filter(s => s.status === "completed").forEach(s => {
+        const mode = (s.payment_mode || "cash").toLowerCase();
+        if (mode !== "split") { breakdown[mode] = (breakdown[mode] || 0) + Number(s.grand_total); }
+      });
+    }
     return Object.entries(breakdown).map(([name, value]) => ({ name, value }));
-  }, [filteredSales]);
+  }, [filteredSales, filteredPaymentRecords]);
 
   const paymentWiseReport = useMemo(() => {
     const map: Record<string, { mode: string; count: number; total: number; avgBill: number }> = {};
-    filteredSales.filter(s => s.status === "completed").forEach(s => {
-      const mode = s.payment_mode || "unknown";
-      if (!map[mode]) map[mode] = { mode, count: 0, total: 0, avgBill: 0 };
-      map[mode].count++; map[mode].total += Number(s.grand_total);
-    });
+    if (filteredPaymentRecords.length > 0) {
+      filteredPaymentRecords.forEach(p => {
+        const mode = (p.payment_mode || "cash").toLowerCase();
+        if (mode === "split") return;
+        if (!map[mode]) map[mode] = { mode, count: 0, total: 0, avgBill: 0 };
+        map[mode].count++; map[mode].total += Number(p.amount);
+      });
+    } else {
+      filteredSales.filter(s => s.status === "completed").forEach(s => {
+        const mode = (s.payment_mode || "cash").toLowerCase();
+        if (mode === "split") return;
+        if (!map[mode]) map[mode] = { mode, count: 0, total: 0, avgBill: 0 };
+        map[mode].count++; map[mode].total += Number(s.grand_total);
+      });
+    }
     Object.values(map).forEach(m => { m.avgBill = m.count > 0 ? m.total / m.count : 0; });
     return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [filteredSales]);
+  }, [filteredSales, filteredPaymentRecords]);
 
   const lowStockItems = useMemo(() => items.filter(i => Number(i.stock) <= (i.low_stock_threshold || 10)).sort((a, b) => Number(a.stock) - Number(b.stock)), [items]);
   const supplierMap = useMemo(() => Object.fromEntries(suppliers.map(s => [s.id, s.name])), [suppliers]);
