@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart, FileText, BookOpen, ArrowUpCircle, ArrowDownCircle, Download } from "lucide-react";
+import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
@@ -9,11 +9,6 @@ interface Customer {
   id: string; name: string; phone: string | null; email: string | null;
   address: string | null; gst_number: string | null; credit_limit: number; outstanding: number;
   created_at: string;
-}
-
-interface LedgerEntry {
-  id: string; type: string; amount: number; balance_after: number;
-  description: string | null; reference_type: string | null; created_at: string;
 }
 
 export default function Customers() {
@@ -29,12 +24,6 @@ export default function Customers() {
   const [viewCustomer, setViewCustomer] = useState<Customer | null>(null);
   const [customerSales, setCustomerSales] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  // Ledger
-  const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
-  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
-  const [loadingLedger, setLoadingLedger] = useState(false);
-  const [showAddEntry, setShowAddEntry] = useState(false);
-  const [entryForm, setEntryForm] = useState({ type: "credit", amount: 0, description: "" });
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -84,56 +73,7 @@ export default function Customers() {
     setLoadingHistory(false);
   };
 
-  // Ledger functions
-  const openLedger = async (customer: Customer) => {
-    setLedgerCustomer(customer);
-    setLoadingLedger(true);
-    const { data } = await supabase.from("customer_ledger").select("*").eq("customer_id", customer.id).order("created_at", { ascending: false }).limit(200);
-    setLedgerEntries((data as any) || []);
-    setLoadingLedger(false);
-  };
 
-  const addLedgerEntry = async () => {
-    if (!ledgerCustomer || !tenantId || entryForm.amount <= 0) return;
-    setSaving(true);
-    try {
-      const currentOutstanding = Number(ledgerCustomer.outstanding) || 0;
-      const newBalance = entryForm.type === "debit"
-        ? currentOutstanding + entryForm.amount
-        : currentOutstanding - entryForm.amount;
-
-      await supabase.from("customer_ledger").insert({
-        tenant_id: tenantId, customer_id: ledgerCustomer.id,
-        type: entryForm.type, amount: entryForm.amount,
-        balance_after: newBalance, description: entryForm.description || null,
-        reference_type: "adjustment",
-      } as any);
-
-      await supabase.from("customers").update({ outstanding: newBalance } as any).eq("id", ledgerCustomer.id);
-
-      toast.success(`${entryForm.type === "credit" ? "Payment received" : "Amount added"}`);
-      setShowAddEntry(false);
-      setEntryForm({ type: "credit", amount: 0, description: "" });
-      setLedgerCustomer({ ...ledgerCustomer, outstanding: newBalance });
-      openLedger({ ...ledgerCustomer, outstanding: newBalance });
-      fetch_();
-    } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
-  };
-
-  const exportLedgerStatement = () => {
-    if (!ledgerCustomer || ledgerEntries.length === 0) return;
-    exportToPDF(
-      `Statement - ${ledgerCustomer.name}`,
-      ["Date", "Type", "Amount", "Balance", "Description"],
-      ledgerEntries.map(e => [
-        new Date(e.created_at).toLocaleDateString(),
-        e.type.toUpperCase(),
-        `₹${Number(e.amount).toFixed(2)}`,
-        `₹${Number(e.balance_after).toFixed(2)}`,
-        e.description || "—",
-      ])
-    );
-  };
 
   return (
     <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
