@@ -25,10 +25,30 @@ export function savePrinterConfig(config: PrinterConfig) {
 // Store persistent device reference
 let usbDevice: any = null;
 let btCharacteristic: any = null;
+let btDevice: any = null;
+
+// Auto-reconnect bluetooth on disconnect
+function setupBTReconnect(device: any) {
+  if (!device?.gatt) return;
+  device.addEventListener("gattserverdisconnected", async () => {
+    console.log("BT printer disconnected, attempting reconnect...");
+    btCharacteristic = null;
+    try {
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService("000018f0-0000-1000-8000-00805f9b34fb");
+      btCharacteristic = await service.getCharacteristic("00002af1-0000-1000-8000-00805f9b34fb");
+      console.log("BT printer reconnected");
+    } catch (e) {
+      console.error("BT reconnect failed:", e);
+    }
+  });
+}
 
 export async function connectUSBPrinter(): Promise<boolean> {
   try {
     if (!("usb" in navigator)) return false;
+    // Reuse existing device if still open
+    if (usbDevice?.opened) return true;
     usbDevice = await (navigator as any).usb.requestDevice({
       filters: [{ classCode: 7 }]
     });
@@ -45,13 +65,17 @@ export async function connectUSBPrinter(): Promise<boolean> {
 export async function connectBluetoothPrinter(): Promise<boolean> {
   try {
     if (!("bluetooth" in navigator)) return false;
+    // Reuse existing connection
+    if (btCharacteristic && btDevice?.gatt?.connected) return true;
     const device = await (navigator as any).bluetooth.requestDevice({
       filters: [{ services: ["000018f0-0000-1000-8000-00805f9b34fb"] }],
       optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb"],
     });
+    btDevice = device;
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService("000018f0-0000-1000-8000-00805f9b34fb");
     btCharacteristic = await service.getCharacteristic("00002af1-0000-1000-8000-00805f9b34fb");
+    setupBTReconnect(device);
     return true;
   } catch (e) {
     console.error("Bluetooth printer connect failed:", e);
