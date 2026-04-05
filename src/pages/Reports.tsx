@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+
 import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare, Search, CreditCard, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from "recharts";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
