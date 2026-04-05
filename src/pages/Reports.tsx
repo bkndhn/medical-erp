@@ -86,22 +86,50 @@ export default function Reports() {
   const grossProfit = netSales - costOfGoods;
   const netProfit = netSales - totalExpenses - costOfGoods;
 
+  // Use payments table to get actual payment mode breakdown (resolves split payments)
+  const filteredPaymentRecords = useMemo(() => {
+    const saleIds = new Set(filteredSales.filter(s => s.status === "completed").map(s => s.id));
+    return paymentRecords.filter(p => p.sale_id && saleIds.has(p.sale_id));
+  }, [paymentRecords, filteredSales]);
+
   const paymentData = useMemo(() => {
     const breakdown: Record<string, number> = {};
-    filteredSales.filter(s => s.status === "completed").forEach(s => { breakdown[s.payment_mode] = (breakdown[s.payment_mode] || 0) + Number(s.grand_total); });
+    // Use payment records for accurate mode-wise totals (split payments resolved)
+    if (filteredPaymentRecords.length > 0) {
+      filteredPaymentRecords.forEach(p => {
+        const mode = (p.payment_mode || "cash").toLowerCase();
+        if (mode !== "split") { breakdown[mode] = (breakdown[mode] || 0) + Number(p.amount); }
+      });
+    } else {
+      // Fallback: use sales table directly for non-split
+      filteredSales.filter(s => s.status === "completed").forEach(s => {
+        const mode = (s.payment_mode || "cash").toLowerCase();
+        if (mode !== "split") { breakdown[mode] = (breakdown[mode] || 0) + Number(s.grand_total); }
+      });
+    }
     return Object.entries(breakdown).map(([name, value]) => ({ name, value }));
-  }, [filteredSales]);
+  }, [filteredSales, filteredPaymentRecords]);
 
   const paymentWiseReport = useMemo(() => {
     const map: Record<string, { mode: string; count: number; total: number; avgBill: number }> = {};
-    filteredSales.filter(s => s.status === "completed").forEach(s => {
-      const mode = s.payment_mode || "unknown";
-      if (!map[mode]) map[mode] = { mode, count: 0, total: 0, avgBill: 0 };
-      map[mode].count++; map[mode].total += Number(s.grand_total);
-    });
+    if (filteredPaymentRecords.length > 0) {
+      filteredPaymentRecords.forEach(p => {
+        const mode = (p.payment_mode || "cash").toLowerCase();
+        if (mode === "split") return;
+        if (!map[mode]) map[mode] = { mode, count: 0, total: 0, avgBill: 0 };
+        map[mode].count++; map[mode].total += Number(p.amount);
+      });
+    } else {
+      filteredSales.filter(s => s.status === "completed").forEach(s => {
+        const mode = (s.payment_mode || "cash").toLowerCase();
+        if (mode === "split") return;
+        if (!map[mode]) map[mode] = { mode, count: 0, total: 0, avgBill: 0 };
+        map[mode].count++; map[mode].total += Number(s.grand_total);
+      });
+    }
     Object.values(map).forEach(m => { m.avgBill = m.count > 0 ? m.total / m.count : 0; });
     return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [filteredSales]);
+  }, [filteredSales, filteredPaymentRecords]);
 
   const lowStockItems = useMemo(() => items.filter(i => Number(i.stock) <= (i.low_stock_threshold || 10)).sort((a, b) => Number(a.stock) - Number(b.stock)), [items]);
   const supplierMap = useMemo(() => Object.fromEntries(suppliers.map(s => [s.id, s.name])), [suppliers]);
