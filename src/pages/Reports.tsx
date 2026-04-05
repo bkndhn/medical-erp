@@ -22,6 +22,7 @@ export default function Reports() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [paymentRecords, setPaymentRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchParams] = useSearchParams();
   const initialTab = (searchParams.get("tab") as Tab) || "overview";
