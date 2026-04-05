@@ -47,10 +47,11 @@ export default function Reports() {
       supabase.from("purchases").select("*, supplier_id").eq("tenant_id", tenantId),
       supabase.from("devices").select("*").eq("tenant_id", tenantId),
       supabase.from("customers").select("id, name, phone").eq("tenant_id", tenantId),
-    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }, { data: cust }]) => {
+      supabase.from("payments").select("*").eq("tenant_id", tenantId),
+    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }, { data: cust }, { data: pay }]) => {
       setSales((s as any) || []); setSaleItems((si as any) || []); setItems((i as any) || []);
       setExpenses((e as any) || []); setSuppliers((sup as any) || []); setPurchases((p as any) || []);
-      setDevices((dev as any) || []); setCustomers((cust as any) || []); setLoading(false);
+      setDevices((dev as any) || []); setCustomers((cust as any) || []); setPaymentRecords((pay as any) || []); setLoading(false);
     });
   }, [tenantId]);
 
