@@ -64,8 +64,12 @@ export default function Suppliers() {
         const { error } = await supabase.from("suppliers").update({ name: editItem.name, phone: editItem.phone, email: editItem.email, address: editItem.address, gst_number: editItem.gst_number }).eq("id", editItem.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("suppliers").insert({ ...editItem, tenant_id: tenantId } as any);
+        const { error } = await supabase.from("suppliers").insert({ ...editItem, tenant_id: tenantId, outstanding: editItem.outstanding || 0 } as any);
         if (error) throw error;
+        // If opening outstanding provided, create initial ledger entry
+        if (Number(editItem.outstanding) > 0) {
+          await supabase.from("customer_ledger").insert({ tenant_id: tenantId, customer_id: null, type: "debit", amount: editItem.outstanding, balance_after: editItem.outstanding, description: "Opening balance", reference_type: "opening" } as any);
+        }
       }
       toast.success(editItem.id ? "Supplier updated" : "Supplier added");
       setShowForm(false); setEditItem(null); fetch_();
@@ -217,8 +221,8 @@ export default function Suppliers() {
           <div className="glass-card rounded-2xl p-6 w-full max-w-md mx-4 animate-fade-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-foreground">{editItem.id ? "Edit" : "New"} Supplier</h3><button onClick={() => setShowForm(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div>
             <div className="space-y-3">
-              {[{l:"Name *",k:"name"},{l:"Phone",k:"phone"},{l:"Email",k:"email"},{l:"Address",k:"address"},{l:"GST Number",k:"gst_number"}].map(({l,k})=>(
-                <div key={k}><label className="text-xs font-medium text-muted-foreground mb-1 block">{l}</label><input type="text" value={(editItem as any)[k]??""} onChange={e=>setEditItem({...editItem,[k]:e.target.value})} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+              {[{l:"Name *",k:"name"},{l:"Phone",k:"phone"},{l:"Email",k:"email"},{l:"Address",k:"address"},{l:"GST Number",k:"gst_number"},{l:"Opening Outstanding (₹)",k:"outstanding",t:"number"}].map(({l,k,t})=>(
+                <div key={k}><label className="text-xs font-medium text-muted-foreground mb-1 block">{l}</label><input type={t||"text"} value={(editItem as any)[k]??""} onChange={e=>setEditItem({...editItem,[k]:t==="number"?parseFloat(e.target.value)||0:e.target.value})} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               ))}
             </div>
             <div className="flex gap-3 mt-4">
