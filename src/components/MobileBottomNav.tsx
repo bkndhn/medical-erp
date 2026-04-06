@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, ShoppingCart, Package, FileText, MoreHorizontal, X,
-  Users, Truck, Wallet, BarChart3, Building2, Monitor, CreditCard,
+  Users, Truck, Wallet, BarChart3, Building2, Monitor, CreditCard, Clock,
   MessageSquare, Settings, Shield, UserCog, Zap
 } from "lucide-react";
 
@@ -23,6 +23,7 @@ const moreNav = [
   { title: "Devices", url: "/devices", icon: Monitor, page: "devices" },
   { title: "Payments", url: "/payments", icon: CreditCard, page: "payments" },
   { title: "Team", url: "/users", icon: UserCog, page: "users" },
+  { title: "Attendance", url: "/attendance", icon: Clock, page: "attendance" },
   { title: "WhatsApp", url: "/whatsapp", icon: MessageSquare, page: "whatsapp" },
   { title: "Settings", url: "/settings", icon: Settings, page: "settings" },
   { title: "Super Admin", url: "/super-admin", icon: Shield, page: "super-admin" },

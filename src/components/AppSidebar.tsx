@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, ShoppingCart, Package, Users, FileText,
   Settings, Truck, CreditCard, Building2,
-  Monitor, ChevronLeft, ChevronRight, Zap,
+  Monitor, ChevronLeft, ChevronRight, Zap, Clock,
   BarChart3, Wallet, MessageSquare, LogOut, Shield, Menu, X, UserCog
 } from "lucide-react";
 
@@ -22,6 +22,7 @@ const allNav = [
   { title: "Devices", url: "/devices", icon: Monitor, page: "devices", section: "Admin" },
   { title: "Payments", url: "/payments", icon: CreditCard, page: "payments", section: "Admin" },
   { title: "Team", url: "/users", icon: UserCog, page: "users", section: "Admin" },
+  { title: "Attendance", url: "/attendance", icon: Clock, page: "attendance", section: "Admin" },
   { title: "WhatsApp", url: "/whatsapp", icon: MessageSquare, page: "whatsapp", section: "Admin" },
   { title: "Settings", url: "/settings", icon: Settings, page: "settings", section: "Admin" },
   { title: "Super Admin", url: "/super-admin", icon: Shield, page: "super-admin", section: "System" },

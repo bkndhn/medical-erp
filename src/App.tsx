@@ -27,6 +27,7 @@ import UserManagement from "./pages/UserManagement";
 import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
 import Install from "./pages/Install";
+import Attendance from "./pages/Attendance";
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,7 @@ const App = () => (
               <Route path="/settings" element={<Settings />} />
               <Route path="/super-admin" element={<SuperAdmin />} />
               <Route path="/users" element={<UserManagement />} />
+              <Route path="/attendance" element={<Attendance />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
