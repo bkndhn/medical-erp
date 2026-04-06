@@ -25,6 +25,9 @@ export interface BusinessDetails {
   fssaiNumber: string;
   dlNumber: string;
   tagline: string;
+  receiptHeader: string;
+  receiptFooter: string;
+  termsAndConditions: string;
 }
 
 const BIZ_KEY = "business_details";
@@ -34,7 +37,7 @@ export function getBusinessDetails(): BusinessDetails {
     const saved = localStorage.getItem(BIZ_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  return { storeName: "", address: "", phone: "", email: "", gstNumber: "", fssaiNumber: "", dlNumber: "", tagline: "Thank you! Visit again." };
+  return { storeName: "", address: "", phone: "", email: "", gstNumber: "", fssaiNumber: "", dlNumber: "", tagline: "Thank you! Visit again.", receiptHeader: "", receiptFooter: "", termsAndConditions: "" };
 }
 
 export function saveBusinessDetails(d: BusinessDetails) {
@@ -226,7 +229,10 @@ export default function Settings() {
                 { l: "GST Number", k: "gstNumber", ph: "22AAAAA0000A1Z5" },
                 { l: "FSSAI / License No.", k: "fssaiNumber", ph: "Optional" },
                 { l: "Drug License No.", k: "dlNumber", ph: "Optional" },
+                { l: "Receipt Header Text", k: "receiptHeader", ph: "Custom text above bill items" },
                 { l: "Receipt Footer / Tagline", k: "tagline", ph: "Thank you! Visit again." },
+                { l: "Receipt Footer Note", k: "receiptFooter", ph: "Custom footer text" },
+                { l: "Terms & Conditions", k: "termsAndConditions", ph: "No returns after 7 days. Goods once sold..." },
               ].map(({ l, k, ph }) => (
                 <div key={k}>
                   <label className="text-xs font-medium text-muted-foreground mb-1 block">{l}</label>
