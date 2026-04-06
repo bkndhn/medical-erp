@@ -31,11 +31,11 @@ interface AuthContextType {
 }
 
 const PAGE_PERMISSIONS: Record<string, string[]> = {
-  super_admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "super-admin"],
-  admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users"],
-  manager: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "payments"],
-  cashier: ["dashboard", "pos", "customers", "invoices"],
-  staff: ["dashboard", "inventory"],
+  super_admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "super-admin", "attendance"],
+  admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "attendance"],
+  manager: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "payments", "attendance"],
+  cashier: ["dashboard", "pos", "customers", "invoices", "attendance"],
+  staff: ["dashboard", "inventory", "attendance"],
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
