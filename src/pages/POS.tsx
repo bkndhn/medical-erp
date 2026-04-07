@@ -859,18 +859,18 @@ export default function POS() {
                         onClick={() => { if (cardDisabled) { toast.error(outOfStock ? "No stock!" : "All stock already in cart!"); return; } addToCart(item); }}
                         className="w-full text-left"
                       >
-                        <p className="text-[11px] font-medium text-foreground line-clamp-2 leading-tight">{item.name}</p>
+                        <p className="text-[13px] font-medium text-foreground line-clamp-2 leading-tight">{item.name}</p>
                         <div className="flex items-center gap-1">
                           <span className="text-xs font-bold text-primary">₹{Number(item.price)}</span>
-                          {Number(item.mrp) > Number(item.price) && <span className="text-[9px] text-muted-foreground line-through">₹{Number(item.mrp)}</span>}
+                          {Number(item.mrp) > Number(item.price) && <span className="text-[10px] text-muted-foreground line-through">₹{Number(item.mrp)}</span>}
                         </div>
-                        <span className={`text-[9px] ${stockColor}`}>{stockLabel}</span>
+                        <span className={`text-[10px] ${stockColor}`}>{stockLabel}</span>
                       </button>
                       {isPackUnit(item.unit) && item.weight_per_unit && item.weight_per_unit > 0 && !outOfStock && (
                         <button
                           onClick={() => { if (fullyInCart) { toast.error("All stock already in cart!"); return; } addToCart(item, true); }}
                           disabled={fullyInCart}
-                          className={`w-full mt-0.5 flex items-center justify-center gap-0.5 py-0.5 rounded text-[9px] font-medium border transition-all touch-manipulation ${fullyInCart ? "bg-muted/40 text-muted-foreground/40 border-border/20 cursor-not-allowed" : "bg-accent/10 text-accent hover:bg-accent/20 border-accent/20"}`}
+                          className={`w-full mt-0.5 flex items-center justify-center gap-0.5 py-0.5 rounded text-[10px] font-medium border transition-all touch-manipulation ${fullyInCart ? "bg-muted/40 text-muted-foreground/40 border-border/20 cursor-not-allowed" : "bg-accent/10 text-accent hover:bg-accent/20 border-accent/20"}`}
                         >
                           L ₹{(Number(item.price) / item.weight_per_unit).toFixed(1)}
                         </button>
@@ -919,11 +919,11 @@ export default function POS() {
                     <div key={getCartItemKey(ci)} className={`px-2 py-1.5 hover:bg-muted/20 transition-colors ${isAtMax ? "bg-destructive/5" : ""}`}>
                       <div className="flex items-center justify-between gap-1">
                         <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-medium text-foreground truncate">
+                          <p className="text-[13px] font-medium text-foreground truncate">
                             {ci.item.name}
-                            {ci.isLoose && <span className="ml-1 text-[8px] px-0.5 py-0 rounded bg-accent/10 text-accent">L</span>}
+                            {ci.isLoose && <span className="ml-1 text-[9px] px-0.5 py-0 rounded bg-accent/10 text-accent">L</span>}
                           </p>
-                          <p className="text-[9px] text-muted-foreground">
+                          <p className="text-[11px] text-muted-foreground">
                             ₹{(ci.loosePrice || Number(ci.item.price)).toFixed(0)} × {ci.quantity}
                             {isAtMax
                               ? <span className="ml-1 text-destructive font-semibold">• Max stock</span>
@@ -932,17 +932,17 @@ export default function POS() {
                           </p>
                         </div>
                         <div className="flex items-center gap-0.5">
-                          <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-2.5 w-2.5" /></button>
+                          <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-3 w-3" /></button>
                           <button onClick={() => { setShowQtyEdit(getCartItemKey(ci)); setQtyInput(String(ci.quantity)); }}
-                            className="text-[11px] font-mono font-semibold text-foreground w-7 text-center py-0.5 rounded bg-muted/50 touch-manipulation">{ci.quantity}</button>
+                            className="text-[13px] font-mono font-semibold text-foreground w-8 text-center py-0.5 rounded bg-muted/50 touch-manipulation">{ci.quantity}</button>
                           <button
                             onClick={() => updateQty(ci.item.id, 1, ci.isLoose)}
                             disabled={isAtMax}
                             className={`p-0.5 rounded touch-manipulation transition-colors ${isAtMax ? "bg-muted/40 text-muted-foreground/30 cursor-not-allowed" : "bg-muted hover:bg-muted/80 text-muted-foreground"}`}
-                          ><Plus className="h-2.5 w-2.5" /></button>
+                          ><Plus className="h-3 w-3" /></button>
                         </div>
-                        <p className="text-[11px] font-semibold text-foreground whitespace-nowrap w-12 text-right">₹{ci.total.toFixed(0)}</p>
-                        <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-2.5 w-2.5" /></button>
+                        <p className="text-[13px] font-semibold text-foreground whitespace-nowrap w-14 text-right">₹{ci.total.toFixed(0)}</p>
+                        <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-3 w-3" /></button>
                       </div>
                     </div>
                   );
@@ -1022,10 +1022,14 @@ export default function POS() {
         );
       })()}
 
-      {/* Payment Modal - Mobile responsive */}
+      {/* Payment Modal - properly bounded on all screen sizes */}
       {showPayment && (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowPayment(false)}>
-          <div className="glass-card rounded-t-2xl md:rounded-2xl p-4 w-full max-w-lg mx-0 md:mx-4 animate-fade-in max-h-[95vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
+          <div
+            className="glass-card rounded-t-2xl md:rounded-2xl p-4 w-full max-w-lg md:mx-4 animate-fade-in overflow-y-auto scrollbar-thin"
+            style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 8px)' }}
+            onClick={e => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-foreground">Payment</h3>
               <button onClick={() => setShowPayment(false)} className="p-1 rounded hover:bg-muted"><X className="h-4 w-4 text-muted-foreground" /></button>
@@ -1035,26 +1039,26 @@ export default function POS() {
 
             {/* Customer info */}
             <div className="flex gap-2 mb-3 p-2 rounded-lg bg-muted/30 border border-border/50">
-              <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Customer name" className="flex-1 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
-              <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Phone" className="w-24 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50" />
+              <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Customer name" className="flex-1 min-w-0 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
+              <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Phone" className="w-24 shrink-0 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50" />
             </div>
 
             <div className="space-y-2 mb-3">
               {paymentLines.map((line, idx) => (
                 <div key={idx} className="flex items-center gap-1.5 p-2 rounded-lg bg-muted/30 border border-border/50">
                   <select value={line.mode} onChange={e => updatePaymentLine(idx, "mode", e.target.value)}
-                    className="px-1.5 py-1.5 rounded-lg bg-muted border border-border text-xs text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-20">
+                    className="shrink-0 px-1.5 py-1.5 rounded-lg bg-muted border border-border text-xs text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary/50 w-20">
                     {paymentModes.map(m => <option key={m.code} value={m.code}>{m.icon} {m.name}</option>)}
                   </select>
-                  <div className="flex-1 relative">
+                  <div className="flex-1 relative min-w-0">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">₹</span>
                     <input type="number" value={line.amount || ""} onChange={e => updatePaymentLine(idx, "amount", parseFloat(e.target.value) || 0)}
                       onKeyDown={e => { if (e.key === "Enter") completeSale(); }}
                       autoFocus={idx === 0}
                       className="w-full pl-5 pr-2 py-1.5 rounded-lg bg-muted border border-border text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50" />
                   </div>
-                  <button onClick={() => fillRemaining(idx)} className="px-1.5 py-1.5 rounded-lg text-[9px] font-medium bg-primary/10 text-primary hover:bg-primary/20 whitespace-nowrap touch-manipulation">Fill</button>
-                  {paymentLines.length > 1 && <button onClick={() => removePaymentLine(idx)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><X className="h-3 w-3" /></button>}
+                  <button onClick={() => fillRemaining(idx)} className="shrink-0 px-1.5 py-1.5 rounded-lg text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 whitespace-nowrap touch-manipulation">Fill</button>
+                  {paymentLines.length > 1 && <button onClick={() => removePaymentLine(idx)} className="shrink-0 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><X className="h-3 w-3" /></button>}
                 </div>
               ))}
             </div>
@@ -1075,7 +1079,7 @@ export default function POS() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 safe-area-bottom">
               <button onClick={() => setShowPayment(false)} className="py-2.5 rounded-lg text-sm font-medium bg-muted text-muted-foreground touch-manipulation">Cancel</button>
               <button onClick={completeSale} disabled={totalPaid < roundedTotal - 0.01 || isSaving} className="py-2.5 rounded-lg text-sm font-medium bg-success text-success-foreground hover:bg-success/90 disabled:opacity-40 touch-manipulation">
                 {isSaving ? "Saving..." : "Complete ₹" + roundedTotal}
