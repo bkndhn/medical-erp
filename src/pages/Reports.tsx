@@ -9,7 +9,7 @@ import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateF
 import { printReceipt, generateWhatsAppText } from "@/lib/printService";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
-const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices"] as const;
+const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices", "suppliers"] as const;
 type Tab = typeof TABS[number];
 
 export default function Reports() {
@@ -279,7 +279,7 @@ export default function Reports() {
   };
 
   const tooltipStyle = { backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' };
-  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️" };
+  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️", suppliers: "🏭" };
 
   const searchedBills = useMemo(() => {
     if (!searchQuery) return filteredSales;
