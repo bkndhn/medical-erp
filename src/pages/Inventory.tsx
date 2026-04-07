@@ -52,6 +52,7 @@ export default function Inventory() {
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [editCategory, setEditCategory] = useState<Partial<Category> | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
+  const [filterExpiry, setFilterExpiry] = useState<string | null>(null);
 
   const fetchData = async () => {
     if (!tenantId) return;
@@ -81,7 +82,14 @@ export default function Inventory() {
     const matchesSearch = !q || i.name.toLowerCase().includes(q) || (i.sku?.toLowerCase().includes(q)) || (i.barcode?.includes(q));
     const matchesFilter = !filterLowStock || (i.stock <= (i.low_stock_threshold || 10));
     const matchesCat = !filterCategory || i.category_id === filterCategory;
-    return matchesSearch && matchesFilter && matchesCat;
+    let matchesExpiry = true;
+    if (filterExpiry) {
+      const today = new Date();
+      if (filterExpiry === "expired") matchesExpiry = !!i.expiry_date && new Date(i.expiry_date) < today;
+      else if (filterExpiry === "30d") matchesExpiry = !!i.expiry_date && new Date(i.expiry_date) >= today && Math.ceil((new Date(i.expiry_date).getTime() - today.getTime()) / 86400000) <= 30;
+      else if (filterExpiry === "90d") matchesExpiry = !!i.expiry_date && new Date(i.expiry_date) >= today && Math.ceil((new Date(i.expiry_date).getTime() - today.getTime()) / 86400000) <= 90;
+    }
+    return matchesSearch && matchesFilter && matchesCat && matchesExpiry;
   });
 
   const lowStockCount = items.filter((i) => i.stock <= (i.low_stock_threshold || 10)).length;
@@ -90,6 +98,18 @@ export default function Inventory() {
 
   const handleSave = async () => {
     if (!editItem?.name || !tenantId) return;
+    // Mandatory fields validation for new items
+    if (!editItem.id) {
+      const missing: string[] = [];
+      if (!(editItem as any).supplier_id) missing.push("Supplier");
+      if (!editItem.price || editItem.price <= 0) missing.push("Price");
+      if (!editItem.mrp || editItem.mrp <= 0) missing.push("MRP");
+      if (!editItem.cost_price || editItem.cost_price <= 0) missing.push("Cost Price");
+      if (!editItem.unit) missing.push("Unit/Packaging");
+      if (!editItem.stock && editItem.stock !== 0) missing.push("Stock");
+      if (!editItem.expiry_date) missing.push("Expiry Date");
+      if (missing.length > 0) { toast.error(`Required: ${missing.join(", ")}`); return; }
+    }
     setSaving(true);
     try {
       if (editItem.id) {
@@ -187,6 +207,13 @@ export default function Inventory() {
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all touch-manipulation ${filterLowStock ? "bg-accent/15 text-accent border border-accent/30" : "bg-muted text-muted-foreground"}`}>
               <AlertTriangle className="h-3.5 w-3.5" /> Low ({lowStockCount})
             </button>
+            <select value={filterExpiry || ""} onChange={e => setFilterExpiry(e.target.value || null)}
+              className="px-2 py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground border border-border focus:outline-none">
+              <option value="">All Expiry</option>
+              <option value="expired">Expired</option>
+              <option value="30d">≤30 days</option>
+              <option value="90d">≤90 days</option>
+            </select>
             <button onClick={() => { setEditCategory({ name: "", icon: "📁", color: null, sort_order: categories.length }); setShowCategoryForm(true); }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground touch-manipulation">
               <FolderPlus className="h-3.5 w-3.5" /> Category
