@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  Package, Plus, Search, Edit2, Trash2, AlertTriangle, X, Save, Copy, Tag, FolderPlus
+  Package, Plus, Search, Edit2, Trash2, AlertTriangle, X, Save, Copy, Tag, FolderPlus, Upload, Download, FileSpreadsheet, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 interface Item {
   id: string; name: string; sku: string | null; barcode: string | null;
@@ -53,6 +54,15 @@ export default function Inventory() {
   const [editCategory, setEditCategory] = useState<Partial<Category> | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
   const [filterExpiry, setFilterExpiry] = useState<string | null>(null);
+
+  // Excel import state
+  const [showImport, setShowImport] = useState(false);
+  const [importData, setImportData] = useState<Record<string, any>[]>([]);
+  const [importHeaders, setImportHeaders] = useState<string[]>([]);
+  const [importMapping, setImportMapping] = useState<Record<string, string>>({});
+  const [importStep, setImportStep] = useState<"upload" | "map" | "preview" | "importing">("upload");
+  const [importProgress, setImportProgress] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
 
   const fetchData = async () => {
     if (!tenantId) return;
@@ -192,6 +202,143 @@ export default function Inventory() {
   const updateSizeVariant = (idx: number, field: string, value: any) => setSizeVariants(prev => prev.map((v, i) => i === idx ? { ...v, [field]: value } : v));
   const removeSizeVariant = (idx: number) => setSizeVariants(prev => prev.filter((_, i) => i !== idx));
 
+  // ── Excel Import / Export Logic ───────────────────────────────────────
+  const FIELD_MAP: Record<string, string[]> = {
+    name: ["name", "item name", "product", "product name", "item", "medicine", "medicine name", "description"],
+    sku: ["sku", "item code", "code", "product code"],
+    barcode: ["barcode", "bar code", "ean", "upc"],
+    price: ["price", "selling price", "sale price", "sp", "rate"],
+    mrp: ["mrp", "max price", "maximum retail price", "retail price"],
+    cost_price: ["cost", "cost price", "purchase price", "cp", "buying price"],
+    unit: ["unit", "uom", "packaging", "pack", "pack type"],
+    gst_rate: ["gst", "gst rate", "gst %", "tax", "tax rate", "tax %"],
+    hsn_code: ["hsn", "hsn code", "hsn_code"],
+    stock: ["stock", "qty", "quantity", "opening stock", "current stock", "balance"],
+    low_stock_threshold: ["min stock", "low stock", "threshold", "reorder level", "min qty"],
+    batch_number: ["batch", "batch no", "batch number", "lot"],
+    expiry_date: ["expiry", "expiry date", "exp date", "exp", "best before"],
+    composition: ["composition", "salt", "generic", "molecule", "formula"],
+    manufacturer: ["manufacturer", "company", "mfg", "brand", "make"],
+    weight_per_unit: ["units per pack", "pack qty", "pack size", "weight", "tabs per strip"],
+    size: ["size"],
+    color: ["color", "colour"],
+    material: ["material", "fabric"],
+  };
+
+  const autoMapHeaders = (headers: string[]) => {
+    const mapping: Record<string, string> = {};
+    headers.forEach(h => {
+      const lower = h.toLowerCase().trim();
+      for (const [field, aliases] of Object.entries(FIELD_MAP)) {
+        if (aliases.includes(lower)) { mapping[h] = field; break; }
+      }
+    });
+    return mapping;
+  };
+
+  const handleFileSelect = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: "array", cellDates: true });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: "" });
+        if (rows.length === 0) { toast.error("File is empty"); return; }
+        const headers = Object.keys(rows[0]);
+        setImportHeaders(headers);
+        setImportData(rows);
+        setImportMapping(autoMapHeaders(headers));
+        setImportStep("map");
+        toast.success(`Loaded ${rows.length} rows from ${file.name}`);
+      } catch { toast.error("Failed to read file. Ensure it's a valid Excel/CSV."); }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const runImport = async () => {
+    if (!tenantId) return;
+    const mapped = importData.map(row => {
+      const item: any = { tenant_id: tenantId, is_active: true };
+      for (const [header, field] of Object.entries(importMapping)) {
+        if (!field || field === "_skip") continue;
+        let val = row[header];
+        if (["price", "mrp", "cost_price", "stock", "gst_rate", "low_stock_threshold", "weight_per_unit"].includes(field))
+          val = parseFloat(String(val).replace(/[^\d.-]/g, "")) || 0;
+        if (field === "expiry_date" && val) {
+          if (val instanceof Date) val = val.toISOString().split("T")[0];
+          else { const d = new Date(String(val)); val = isNaN(d.getTime()) ? null : d.toISOString().split("T")[0]; }
+        }
+        if (field === "low_stock_threshold" && !val) val = 10;
+        item[field] = val;
+      }
+      if (!item.name || String(item.name).trim() === "") return null;
+      if (!item.unit) item.unit = "pcs";
+      if (!item.mrp && item.price) item.mrp = item.price;
+      return item;
+    }).filter(Boolean);
+
+    if (mapped.length === 0) { toast.error("No valid items to import"); return; }
+
+    setImportStep("importing"); setImportProgress(0);
+    const BATCH = 50;
+    let imported = 0;
+    for (let i = 0; i < mapped.length; i += BATCH) {
+      const batch = mapped.slice(i, i + BATCH);
+      const { error } = await supabase.from("items").insert(batch as any);
+      if (error) { toast.error(`Batch error: ${error.message}`); break; }
+      imported += batch.length;
+      setImportProgress(Math.round((imported / mapped.length) * 100));
+    }
+    toast.success(`✅ Imported ${imported} of ${mapped.length} items`);
+    setShowImport(false); setImportStep("upload"); setImportData([]); fetchData();
+  };
+
+  const exportToExcel = () => {
+    const exportData = filtered.map(i => ({
+      Name: i.name, SKU: i.sku || "", Barcode: i.barcode || "",
+      Price: Number(i.price), MRP: Number(i.mrp), "Cost Price": Number(i.cost_price || 0),
+      Unit: i.unit || "pcs", "GST %": Number(i.gst_rate || 0), HSN: i.hsn_code || "",
+      Stock: Number(i.stock), "Min Stock": Number(i.low_stock_threshold || 10),
+      Batch: i.batch_number || "", "Expiry Date": i.expiry_date || "",
+      Composition: i.composition || "", Manufacturer: i.manufacturer || "",
+      "Units Per Pack": Number(i.weight_per_unit || 0),
+      Category: i.category_id && categoryMap[i.category_id] ? categoryMap[i.category_id].name : "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+    XLSX.writeFile(wb, `inventory_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.success(`Exported ${exportData.length} items`);
+  };
+
+  const downloadTemplate = () => {
+    const sample = [{
+      Name: "Paracetamol 500mg", SKU: "PARA500", Barcode: "8901234567890",
+      Price: 25, MRP: 30, "Cost Price": 18, Unit: "strip",
+      "GST %": 12, HSN: "30049099", Stock: 100, "Min Stock": 20,
+      Batch: "BN2024A", "Expiry Date": "2026-12-31",
+      Composition: "Paracetamol", Manufacturer: "Sun Pharma", "Units Per Pack": 10,
+    }, {
+      Name: "Amoxicillin 250mg", SKU: "AMOX250", Barcode: "",
+      Price: 45, MRP: 52, "Cost Price": 32, Unit: "strip",
+      "GST %": 12, HSN: "30041090", Stock: 50, "Min Stock": 10,
+      Batch: "BN2024B", "Expiry Date": "2025-06-30",
+      Composition: "Amoxicillin", Manufacturer: "Cipla", "Units Per Pack": 10,
+    }];
+    const ws = XLSX.utils.json_to_sheet(sample);
+    // Set column widths
+    ws["!cols"] = Object.keys(sample[0]).map(k => ({ wch: Math.max(k.length + 2, 14) }));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "inventory_import_template.xlsx");
+    toast.success("Template downloaded");
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-3 sm:px-6 py-3 sm:py-4">
@@ -203,6 +350,18 @@ export default function Inventory() {
             <p className="text-xs sm:text-sm text-muted-foreground truncate">{items.length} products • {lowStockCount} low stock</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={() => { setShowImport(true); setImportStep("upload"); setImportData([]); }}
+              className="p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground touch-manipulation"
+              title="Import from Excel">
+              <Upload className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline-flex items-center gap-1.5"><Upload className="h-3.5 w-3.5" /> Import</span>
+            </button>
+            <button onClick={exportToExcel}
+              className="p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground touch-manipulation"
+              title="Export to Excel">
+              <Download className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline-flex items-center gap-1.5"><Download className="h-3.5 w-3.5" /> Export</span>
+            </button>
             <button onClick={() => { setEditCategory({ name: "", icon: "📁", color: null, sort_order: categories.length }); setShowCategoryForm(true); }}
               className="p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground touch-manipulation"
               title="Add Category">
@@ -260,14 +419,15 @@ export default function Inventory() {
             <p className="text-sm">Add your first product to get started</p>
           </div>
         ) : (
-          {/* Mobile card layout */}
-          <div className="md:hidden space-y-2">
-            {filtered.map((item) => {
-              const isLow = Number(item.stock) <= (item.low_stock_threshold || 10);
-              const isOut = Number(item.stock) === 0;
-              return (
-                <div key={item.id} className={`glass-card rounded-xl p-3 ${isOut ? "border-destructive/30 bg-destructive/5" : isLow ? "border-accent/30 bg-accent/5" : ""}`}>
-                  <div className="flex items-start justify-between gap-2">
+          <>
+            {/* Mobile card layout */}
+            <div className="md:hidden space-y-2">
+              {filtered.map((item) => {
+                const isLow = Number(item.stock) <= (item.low_stock_threshold || 10);
+                const isOut = Number(item.stock) === 0;
+                return (
+                  <div key={item.id} className={`glass-card rounded-xl p-3 ${isOut ? "border-destructive/30 bg-destructive/5" : isLow ? "border-accent/30 bg-accent/5" : ""}`}>
+                    <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">{item.name}</p>
                       <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -369,7 +529,9 @@ export default function Inventory() {
                 ))}
               </tbody>
             </table>
+            </table>
           </div>
+          </>
         )}
       </div>
 
@@ -534,6 +696,138 @@ export default function Inventory() {
                 <Save className="h-4 w-4" /> {saving ? "Saving..." : sizeVariants.length > 0 ? `Create ${sizeVariants.length} Variants` : "Save"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Excel Import Modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+        >
+          <div className="glass-card rounded-2xl p-6 w-full max-w-3xl mx-4 max-h-[90vh] flex flex-col animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6 shrink-0">
+              <h3 className="text-xl font-bold text-foreground flex items-center gap-2"><FileSpreadsheet className="h-6 w-6 text-primary" /> Import Inventory</h3>
+              {importStep !== "importing" && <button onClick={() => setShowImport(false)} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground"><X className="h-5 w-5" /></button>}
+            </div>
+
+            {importStep === "upload" && (
+              <div className="flex-1 flex flex-col">
+                <div className={`flex-1 min-h-[300px] border-2 border-dashed rounded-xl flex flex-col items-center justify-center p-8 transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border bg-muted/20"}`}>
+                  <Upload className={`h-12 w-12 mb-4 ${dragOver ? "text-primary" : "text-muted-foreground"}`} />
+                  <h4 className="text-lg font-semibold text-foreground mb-2">Drag & Drop your Excel file here</h4>
+                  <p className="text-sm text-muted-foreground mb-6 text-center max-w-sm">Supports .xlsx, .xls, and .csv files. Download the template below if you need a starting point.</p>
+                  <label className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium cursor-pointer hover:bg-primary/90 transition-colors">
+                    Browse Files
+                    <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFileSelect(e.target.files[0]); }} />
+                  </label>
+                </div>
+                <div className="mt-6 flex justify-between items-center bg-muted/50 p-4 rounded-xl">
+                  <div className="text-sm text-muted-foreground">Need a template? Get the correctly formatted Excel file.</div>
+                  <button onClick={downloadTemplate} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-background border border-border text-foreground hover:bg-muted text-sm font-medium transition-colors">
+                    <Download className="h-4 w-4" /> Download Template
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importStep === "map" && (
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between mb-4 bg-primary/10 text-primary px-4 py-3 rounded-lg text-sm font-medium">
+                  <span>Found {importData.length} rows in your file.</span>
+                  <span>Match your columns below:</span>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin">
+                  <div className="grid grid-cols-2 gap-4 mb-2 px-2">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Your Excel Column</span>
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Map to App Field</span>
+                  </div>
+                  <div className="space-y-2">
+                    {importHeaders.map(h => (
+                      <div key={h} className="grid grid-cols-2 gap-4 items-center bg-muted/30 p-2.5 rounded-lg border border-border/50">
+                        <span className="text-sm font-medium truncate" title={h}>{h}</span>
+                        <select value={importMapping[h] || "_skip"} onChange={e => setImportMapping({ ...importMapping, [h]: e.target.value })}
+                          className="w-full px-3 py-1.5 rounded-md bg-background border border-border text-sm text-foreground focus:ring-2 focus:ring-primary/50">
+                          <option value="_skip">-- Skip Column --</option>
+                          <option disabled>──────────</option>
+                          <option value="name">Item Name *</option>
+                          <option value="price">Selling Price *</option>
+                          <option value="mrp">MRP</option>
+                          <option value="cost_price">Cost Price</option>
+                          <option value="stock">Stock Quantity</option>
+                          <option value="low_stock_threshold">Low Stock Alert Level</option>
+                          <option value="sku">SKU Code</option>
+                          <option value="barcode">Barcode</option>
+                          <option value="unit">Unit (e.g. pcs, box)</option>
+                          <option value="gst_rate">GST %</option>
+                          <option value="hsn_code">HSN Code</option>
+                          <option value="batch_number">Batch Number</option>
+                          <option value="expiry_date">Expiry Date</option>
+                          <option value="manufacturer">Brand / Manufacturer</option>
+                          <option value="composition">Composition</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-3 shrink-0 pt-4 border-t border-border">
+                  <button onClick={() => setImportStep("upload")} className="px-5 py-2.5 rounded-lg bg-muted text-muted-foreground hover:bg-muted/80 font-medium text-sm">Back</button>
+                  <button onClick={() => setImportStep("preview")} className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-medium text-sm transition-colors">
+                    Continue to Preview
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importStep === "preview" && (
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <div className="bg-accent/10 text-accent px-4 py-3 rounded-lg text-sm font-medium mb-4">
+                  Please review the preview of the first 3 items. If it looks correct, start the import.
+                </div>
+                <div className="flex-1 overflow-y-auto scrollbar-thin">
+                  <div className="space-y-3">
+                    {importData.slice(0, 3).map((row, i) => {
+                      const nameKey = Object.keys(importMapping).find(k => importMapping[k] === "name");
+                      const priceKey = Object.keys(importMapping).find(k => importMapping[k] === "price");
+                      const stockKey = Object.keys(importMapping).find(k => importMapping[k] === "stock");
+                      return (
+                        <div key={i} className="p-4 rounded-xl border border-border bg-background">
+                          <h4 className="font-semibold text-foreground">{nameKey ? row[nameKey] || "Unknown Item" : "Missing Name Mapping"}</h4>
+                          <div className="flex gap-4 mt-2 text-sm text-muted-foreground">
+                            <span>Price: <strong className="text-foreground">₹{priceKey ? row[priceKey] || 0 : 0}</strong></span>
+                            <span>Stock: <strong className="text-foreground">{stockKey ? row[stockKey] || 0 : 0}</strong></span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {importData.length > 3 && (
+                      <div className="text-center text-sm text-muted-foreground py-2 border-t border-border mt-4">
+                        + {importData.length - 3} more items will be imported
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-3 shrink-0 pt-4 border-t border-border">
+                  <button onClick={() => setImportStep("map")} className="px-5 py-2.5 rounded-lg bg-muted text-muted-foreground hover:bg-muted/80 font-medium text-sm">Back to Mapping</button>
+                  <button onClick={runImport} className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-success text-white hover:bg-success/90 font-medium text-sm transition-colors shadow-lg shadow-success/20">
+                    <CheckCircle2 className="h-4 w-4" /> Start Import Now
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importStep === "importing" && (
+              <div className="flex-1 flex flex-col items-center justify-center min-h-[300px]">
+                <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin mb-6" />
+                <h4 className="text-xl font-bold text-foreground mb-2">Importing Items...</h4>
+                <p className="text-muted-foreground mb-8">Please do not close this window</p>
+                <div className="w-full max-w-md bg-muted rounded-full h-3 overflow-hidden">
+                  <div className="bg-primary h-full transition-all duration-300" style={{ width: `${importProgress}%` }} />
+                </div>
+                <p className="text-sm font-medium mt-3 text-primary">{importProgress}% Complete</p>
+              </div>
+            )}
           </div>
         </div>
       )}
