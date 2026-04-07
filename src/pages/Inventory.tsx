@@ -52,6 +52,7 @@ export default function Inventory() {
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [editCategory, setEditCategory] = useState<Partial<Category> | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
+  const [filterExpiry, setFilterExpiry] = useState<string | null>(null);
 
   const fetchData = async () => {
     if (!tenantId) return;
@@ -81,7 +82,14 @@ export default function Inventory() {
     const matchesSearch = !q || i.name.toLowerCase().includes(q) || (i.sku?.toLowerCase().includes(q)) || (i.barcode?.includes(q));
     const matchesFilter = !filterLowStock || (i.stock <= (i.low_stock_threshold || 10));
     const matchesCat = !filterCategory || i.category_id === filterCategory;
-    return matchesSearch && matchesFilter && matchesCat;
+    let matchesExpiry = true;
+    if (filterExpiry) {
+      const today = new Date();
+      if (filterExpiry === "expired") matchesExpiry = !!i.expiry_date && new Date(i.expiry_date) < today;
+      else if (filterExpiry === "30d") matchesExpiry = !!i.expiry_date && new Date(i.expiry_date) >= today && Math.ceil((new Date(i.expiry_date).getTime() - today.getTime()) / 86400000) <= 30;
+      else if (filterExpiry === "90d") matchesExpiry = !!i.expiry_date && new Date(i.expiry_date) >= today && Math.ceil((new Date(i.expiry_date).getTime() - today.getTime()) / 86400000) <= 90;
+    }
+    return matchesSearch && matchesFilter && matchesCat && matchesExpiry;
   });
 
   const lowStockCount = items.filter((i) => i.stock <= (i.low_stock_threshold || 10)).length;
@@ -90,6 +98,18 @@ export default function Inventory() {
 
   const handleSave = async () => {
     if (!editItem?.name || !tenantId) return;
+    // Mandatory fields validation for new items
+    if (!editItem.id) {
+      const missing: string[] = [];
+      if (!(editItem as any).supplier_id) missing.push("Supplier");
+      if (!editItem.price || editItem.price <= 0) missing.push("Price");
+      if (!editItem.mrp || editItem.mrp <= 0) missing.push("MRP");
+      if (!editItem.cost_price || editItem.cost_price <= 0) missing.push("Cost Price");
+      if (!editItem.unit) missing.push("Unit/Packaging");
+      if (!editItem.stock && editItem.stock !== 0) missing.push("Stock");
+      if (!editItem.expiry_date) missing.push("Expiry Date");
+      if (missing.length > 0) { toast.error(`Required: ${missing.join(", ")}`); return; }
+    }
     setSaving(true);
     try {
       if (editItem.id) {
@@ -187,6 +207,13 @@ export default function Inventory() {
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all touch-manipulation ${filterLowStock ? "bg-accent/15 text-accent border border-accent/30" : "bg-muted text-muted-foreground"}`}>
               <AlertTriangle className="h-3.5 w-3.5" /> Low ({lowStockCount})
             </button>
+            <select value={filterExpiry || ""} onChange={e => setFilterExpiry(e.target.value || null)}
+              className="px-2 py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground border border-border focus:outline-none">
+              <option value="">All Expiry</option>
+              <option value="expired">Expired</option>
+              <option value="30d">≤30 days</option>
+              <option value="90d">≤90 days</option>
+            </select>
             <button onClick={() => { setEditCategory({ name: "", icon: "📁", color: null, sort_order: categories.length }); setShowCategoryForm(true); }}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground touch-manipulation">
               <FolderPlus className="h-3.5 w-3.5" /> Category
@@ -227,13 +254,13 @@ export default function Inventory() {
             <p className="text-sm">Add your first product to get started</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <table className="w-full text-sm min-w-[900px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Name</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">Category</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">SKU</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Category</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">SKU</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Price</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Stock</th>
                   <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Unit</th>
@@ -250,12 +277,12 @@ export default function Inventory() {
                       {item.name}
                       {item.color && <span className="ml-1 text-xs text-muted-foreground">({item.color})</span>}
                     </td>
-                    <td className="py-3 px-3 text-xs text-muted-foreground hidden sm:table-cell">
+                    <td className="py-3 px-3 text-xs text-muted-foreground">
                       {item.category_id && categoryMap[item.category_id] ? (
                         <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">{categoryMap[item.category_id].icon} {categoryMap[item.category_id].name}</span>
                       ) : "—"}
                     </td>
-                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs hidden sm:table-cell">{item.sku || "—"}</td>
+                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{item.sku || "—"}</td>
                     <td className="py-3 px-3 text-right text-foreground">₹{Number(item.price).toFixed(0)}</td>
                     <td className="py-3 px-3 text-right">
                       <span className={`font-semibold ${Number(item.stock) <= (item.low_stock_threshold || 10) ? "text-accent" : "text-success"}`}>
@@ -343,10 +370,10 @@ export default function Inventory() {
               </div>
 
               {/* Supplier selector */}
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Supplier</label>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Supplier *</label>
                 <select value={(editItem as any).supplier_id || ""} onChange={e => setEditItem({ ...editItem, supplier_id: e.target.value || null } as any)}
-                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
-                  <option value="">No Supplier</option>
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50">
+                  <option value="">Select Supplier</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
@@ -355,14 +382,14 @@ export default function Inventory() {
                 <input type="text" value={editItem.sku || ""} onChange={e => setEditItem({ ...editItem, sku: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Barcode</label>
                 <input type="text" value={editItem.barcode || ""} onChange={e => setEditItem({ ...editItem, barcode: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Price</label>
-                <input type="number" value={editItem.price || ""} onChange={e => setEditItem({ ...editItem, price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">MRP</label>
-                <input type="number" value={editItem.mrp || ""} onChange={e => setEditItem({ ...editItem, mrp: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Cost Price</label>
-                <input type="number" value={editItem.cost_price || ""} onChange={e => setEditItem({ ...editItem, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Unit / Packaging</label>
-                <select value={editItem.unit || "pcs"} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
+              <div><label className="text-xs font-medium text-accent mb-1 block">Price *</label>
+                <input type="number" value={editItem.price || ""} onChange={e => setEditItem({ ...editItem, price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">MRP *</label>
+                <input type="number" value={editItem.mrp || ""} onChange={e => setEditItem({ ...editItem, mrp: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Cost Price *</label>
+                <input type="number" value={editItem.cost_price || ""} onChange={e => setEditItem({ ...editItem, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Unit / Packaging *</label>
+                <select value={editItem.unit || "strip"} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50">
                   {unitOptions.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
@@ -370,7 +397,7 @@ export default function Inventory() {
                 <input type="number" value={editItem.gst_rate || ""} onChange={e => setEditItem({ ...editItem, gst_rate: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">HSN Code</label>
                 <input type="text" value={editItem.hsn_code || ""} onChange={e => setEditItem({ ...editItem, hsn_code: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Stock</label>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Stock *</label>
                 <input type="number" value={editItem.stock || ""} onChange={e => setEditItem({ ...editItem, stock: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Low Stock Threshold</label>
                 <input type="number" value={editItem.low_stock_threshold || ""} onChange={e => setEditItem({ ...editItem, low_stock_threshold: parseFloat(e.target.value) || 10 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
@@ -388,8 +415,8 @@ export default function Inventory() {
 
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Batch Number</label>
                 <input type="text" value={editItem.batch_number || ""} onChange={e => setEditItem({ ...editItem, batch_number: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Expiry Date</label>
-                <input type="date" value={editItem.expiry_date || ""} onChange={e => setEditItem({ ...editItem, expiry_date: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Expiry Date *</label>
+                <input type="date" value={editItem.expiry_date || ""} onChange={e => setEditItem({ ...editItem, expiry_date: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
 
               {isMedical && <>
                 <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Composition</label>

@@ -9,7 +9,7 @@ import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateF
 import { printReceipt, generateWhatsAppText } from "@/lib/printService";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
-const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices"] as const;
+const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices", "suppliers"] as const;
 type Tab = typeof TABS[number];
 
 export default function Reports() {
@@ -279,7 +279,7 @@ export default function Reports() {
   };
 
   const tooltipStyle = { backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' };
-  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️" };
+  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️", suppliers: "🏭" };
 
   const searchedBills = useMemo(() => {
     if (!searchQuery) return filteredSales;
@@ -422,8 +422,8 @@ export default function Reports() {
             </div>
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" /> All Bills</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[800px]">
                   <thead><tr className="border-b border-border">
                     <th className="text-left py-2 text-xs text-muted-foreground">Invoice</th>
                     <th className="text-left py-2 text-xs text-muted-foreground">Date</th>
@@ -545,8 +545,8 @@ export default function Reports() {
             </div>
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" /> GST Rate-wise Summary</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[700px]">
                   <thead><tr className="border-b border-border">
                     <th className="text-left py-2 text-xs text-muted-foreground">GST Rate</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Items</th>
@@ -607,8 +607,8 @@ export default function Reports() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="glass-card rounded-xl p-5">
                 <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary" /> Payment Mode Summary</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-5 px-5">
+                  <table className="w-full text-sm min-w-[600px]">
                     <thead><tr className="border-b border-border">
                       <th className="text-left py-2 text-xs text-muted-foreground">Mode</th>
                       <th className="text-right py-2 text-xs text-muted-foreground">Bills</th>
@@ -665,30 +665,30 @@ export default function Reports() {
             </div>
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4"><Calendar className="h-4 w-4 text-accent inline mr-2" />Expiry Tracker</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-fixed">
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[900px]">
                   <thead><tr className="border-b border-border">
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[20%]">Item</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[10%]">Batch</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[18%]">Item</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[8%]">Batch</th>
                     <th className="text-left py-2 text-xs text-muted-foreground w-[12%]">Manufacturer</th>
                     <th className="text-left py-2 text-xs text-muted-foreground w-[10%]">Supplier</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">Stock</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">MRP</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[10%]">Value</th>
-                    <th className="text-center py-2 text-xs text-muted-foreground w-[14%]">Expiry</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[12%]">Expiry Date</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[10%]">Days Left</th>
                   </tr></thead>
                   <tbody>{expiryItems.filter(i => searchFilter(i.name)).map((item, i) => (
                     <tr key={i} className={`border-b border-border/30 ${item.expired ? "bg-destructive/5" : item.daysLeft <= 30 ? "bg-accent/5" : ""}`}>
-                      <td className="py-2 text-foreground truncate">{item.name}</td>
+                      <td className="py-2 text-foreground text-xs">{item.name}</td>
                       <td className="py-2 text-muted-foreground font-mono text-xs">{item.batch_number || "—"}</td>
-                      <td className="py-2 text-muted-foreground text-xs truncate">{item.manufacturer || "—"}</td>
-                      <td className="py-2 text-muted-foreground text-xs truncate">{item.supplier_id ? (suppliers.find((s: any) => s.id === item.supplier_id)?.name || "—") : "—"}</td>
-                      <td className="py-2 text-right text-foreground font-medium">{Number(item.stock)}</td>
-                      <td className="py-2 text-right text-muted-foreground">₹{Number(item.mrp).toFixed(0)}</td>
-                      <td className="py-2 text-right text-foreground font-medium">₹{item.stockValue.toFixed(0)}</td>
-                      <td className="py-2 text-center text-xs text-muted-foreground">{item.expiry_date}</td>
-                      <td className="py-2 text-right"><span className={`font-semibold ${item.expired ? "text-destructive" : item.daysLeft <= 30 ? "text-accent" : item.daysLeft <= 90 ? "text-foreground" : "text-success"}`}>{item.expired ? "EXPIRED" : `${item.daysLeft}d`}</span></td>
+                      <td className="py-2 text-muted-foreground text-xs">{item.manufacturer || "—"}</td>
+                      <td className="py-2 text-muted-foreground text-xs">{item.supplier_id ? (suppliers.find((s: any) => s.id === item.supplier_id)?.name || "—") : "—"}</td>
+                      <td className="py-2 text-right text-foreground font-medium text-xs">{Number(item.stock)}</td>
+                      <td className="py-2 text-right text-muted-foreground text-xs">₹{Number(item.mrp).toFixed(0)}</td>
+                      <td className="py-2 text-right text-foreground font-medium text-xs">₹{item.stockValue.toFixed(0)}</td>
+                      <td className="py-2 text-xs text-muted-foreground">{item.expiry_date}</td>
+                      <td className="py-2 text-right"><span className={`font-semibold text-xs ${item.expired ? "text-destructive" : item.daysLeft <= 30 ? "text-accent" : item.daysLeft <= 90 ? "text-foreground" : "text-success"}`}>{item.expired ? "EXPIRED" : `${item.daysLeft}d`}</span></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -706,8 +706,8 @@ export default function Reports() {
             </div>
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4"><Monitor className="h-4 w-4 text-primary inline mr-2" />Device-wise Sales</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[600px]">
                   <thead><tr className="border-b border-border">
                     <th className="text-left py-2 text-xs text-muted-foreground">Device</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Orders</th>
@@ -741,6 +741,72 @@ export default function Reports() {
                 </ResponsiveContainer>
               </div>
             )}
+          </>}
+
+          {/* Suppliers & Purchases Tab */}
+          {tab === "suppliers" && <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Suppliers</p><p className="text-2xl font-bold text-foreground mt-1">{suppliers.length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Purchases</p><p className="text-2xl font-bold text-primary mt-1">₹{totalPurchases.toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Purchase Orders</p><p className="text-2xl font-bold text-foreground mt-1">{filteredPurchases.length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Avg Purchase</p><p className="text-2xl font-bold text-accent mt-1">₹{filteredPurchases.length > 0 ? (totalPurchases / filteredPurchases.length).toFixed(0) : 0}</p></div>
+            </div>
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4">Supplier-wise Purchase Summary</h3>
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[600px]">
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">Supplier</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Orders</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Total</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Avg Order</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Share %</th>
+                  </tr></thead>
+                  <tbody>
+                    {supplierWise.filter(s => searchFilter(s.name)).map((s, i) => (
+                      <tr key={i} className="border-b border-border/30">
+                        <td className="py-2 text-foreground font-medium">{s.name}</td>
+                        <td className="py-2 text-right text-muted-foreground">{s.count}</td>
+                        <td className="py-2 text-right font-semibold text-primary">₹{s.total.toLocaleString()}</td>
+                        <td className="py-2 text-right text-muted-foreground">₹{s.count > 0 ? (s.total / s.count).toFixed(0) : 0}</td>
+                        <td className="py-2 text-right text-accent">{totalPurchases > 0 ? ((s.total / totalPurchases) * 100).toFixed(1) : 0}%</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-border font-bold">
+                      <td className="py-2 text-foreground">TOTAL</td>
+                      <td className="py-2 text-right text-foreground">{filteredPurchases.length}</td>
+                      <td className="py-2 text-right text-primary">₹{totalPurchases.toLocaleString()}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {supplierWise.length === 0 && <p className="text-muted-foreground text-center py-8">No purchase data</p>}
+            </div>
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4">All Purchase Orders</h3>
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[700px]">
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">Date</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground">Supplier</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground">Status</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Amount</th>
+                  </tr></thead>
+                  <tbody>
+                    {filteredPurchases.filter(p => searchFilter(supplierMap[p.supplier_id] || "")).map((p, i) => (
+                      <tr key={i} className="border-b border-border/30">
+                        <td className="py-2 text-xs text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</td>
+                        <td className="py-2 text-foreground">{supplierMap[p.supplier_id] || "Unknown"}</td>
+                        <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${p.status === "received" ? "bg-success/10 text-success" : p.status === "ordered" ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground"}`}>{p.status}</span></td>
+                        <td className="py-2 text-right font-semibold text-foreground">₹{Number(p.grand_total).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {filteredPurchases.length === 0 && <p className="text-muted-foreground text-center py-8">No purchases</p>}
+            </div>
           </>}
         </>}
       </div>
