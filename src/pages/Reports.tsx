@@ -609,6 +609,8 @@ export default function Reports() {
                 <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><CreditCard className="h-4 w-4 text-primary" /> Payment Mode Summary</h3>
                 <div className="overflow-x-auto -mx-5 px-5">
                   <table className="w-full text-sm min-w-[600px]">
+                    <thead><tr className="border-b border-border">
+                      <th className="text-left py-2 text-xs text-muted-foreground">Mode</th>
                       <th className="text-right py-2 text-xs text-muted-foreground">Bills</th>
                       <th className="text-right py-2 text-xs text-muted-foreground">Total</th>
                       <th className="text-right py-2 text-xs text-muted-foreground">Avg Bill</th>
@@ -706,6 +708,8 @@ export default function Reports() {
               <h3 className="text-sm font-semibold text-foreground mb-4"><Monitor className="h-4 w-4 text-primary inline mr-2" />Device-wise Sales</h3>
               <div className="overflow-x-auto -mx-5 px-5">
                 <table className="w-full text-sm min-w-[600px]">
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">Device</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Orders</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Revenue</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Avg Bill</th>
