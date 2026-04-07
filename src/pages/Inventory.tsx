@@ -370,10 +370,10 @@ export default function Inventory() {
               </div>
 
               {/* Supplier selector */}
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Supplier</label>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Supplier *</label>
                 <select value={(editItem as any).supplier_id || ""} onChange={e => setEditItem({ ...editItem, supplier_id: e.target.value || null } as any)}
-                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
-                  <option value="">No Supplier</option>
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50">
+                  <option value="">Select Supplier</option>
                   {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
@@ -382,14 +382,14 @@ export default function Inventory() {
                 <input type="text" value={editItem.sku || ""} onChange={e => setEditItem({ ...editItem, sku: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Barcode</label>
                 <input type="text" value={editItem.barcode || ""} onChange={e => setEditItem({ ...editItem, barcode: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Price</label>
-                <input type="number" value={editItem.price || ""} onChange={e => setEditItem({ ...editItem, price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">MRP</label>
-                <input type="number" value={editItem.mrp || ""} onChange={e => setEditItem({ ...editItem, mrp: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Cost Price</label>
-                <input type="number" value={editItem.cost_price || ""} onChange={e => setEditItem({ ...editItem, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Unit / Packaging</label>
-                <select value={editItem.unit || "pcs"} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
+              <div><label className="text-xs font-medium text-accent mb-1 block">Price *</label>
+                <input type="number" value={editItem.price || ""} onChange={e => setEditItem({ ...editItem, price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">MRP *</label>
+                <input type="number" value={editItem.mrp || ""} onChange={e => setEditItem({ ...editItem, mrp: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Cost Price *</label>
+                <input type="number" value={editItem.cost_price || ""} onChange={e => setEditItem({ ...editItem, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Unit / Packaging *</label>
+                <select value={editItem.unit || "strip"} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50">
                   {unitOptions.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
@@ -397,7 +397,7 @@ export default function Inventory() {
                 <input type="number" value={editItem.gst_rate || ""} onChange={e => setEditItem({ ...editItem, gst_rate: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">HSN Code</label>
                 <input type="text" value={editItem.hsn_code || ""} onChange={e => setEditItem({ ...editItem, hsn_code: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Stock</label>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Stock *</label>
                 <input type="number" value={editItem.stock || ""} onChange={e => setEditItem({ ...editItem, stock: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Low Stock Threshold</label>
                 <input type="number" value={editItem.low_stock_threshold || ""} onChange={e => setEditItem({ ...editItem, low_stock_threshold: parseFloat(e.target.value) || 10 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
