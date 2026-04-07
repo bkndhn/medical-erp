@@ -665,30 +665,30 @@ export default function Reports() {
             </div>
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4"><Calendar className="h-4 w-4 text-accent inline mr-2" />Expiry Tracker</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm table-fixed">
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[900px]">
                   <thead><tr className="border-b border-border">
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[20%]">Item</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[10%]">Batch</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[18%]">Item</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[8%]">Batch</th>
                     <th className="text-left py-2 text-xs text-muted-foreground w-[12%]">Manufacturer</th>
                     <th className="text-left py-2 text-xs text-muted-foreground w-[10%]">Supplier</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">Stock</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">MRP</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[10%]">Value</th>
-                    <th className="text-center py-2 text-xs text-muted-foreground w-[14%]">Expiry</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground w-[12%]">Expiry Date</th>
                     <th className="text-right py-2 text-xs text-muted-foreground w-[10%]">Days Left</th>
                   </tr></thead>
                   <tbody>{expiryItems.filter(i => searchFilter(i.name)).map((item, i) => (
                     <tr key={i} className={`border-b border-border/30 ${item.expired ? "bg-destructive/5" : item.daysLeft <= 30 ? "bg-accent/5" : ""}`}>
-                      <td className="py-2 text-foreground truncate">{item.name}</td>
+                      <td className="py-2 text-foreground text-xs">{item.name}</td>
                       <td className="py-2 text-muted-foreground font-mono text-xs">{item.batch_number || "—"}</td>
-                      <td className="py-2 text-muted-foreground text-xs truncate">{item.manufacturer || "—"}</td>
-                      <td className="py-2 text-muted-foreground text-xs truncate">{item.supplier_id ? (suppliers.find((s: any) => s.id === item.supplier_id)?.name || "—") : "—"}</td>
-                      <td className="py-2 text-right text-foreground font-medium">{Number(item.stock)}</td>
-                      <td className="py-2 text-right text-muted-foreground">₹{Number(item.mrp).toFixed(0)}</td>
-                      <td className="py-2 text-right text-foreground font-medium">₹{item.stockValue.toFixed(0)}</td>
-                      <td className="py-2 text-center text-xs text-muted-foreground">{item.expiry_date}</td>
-                      <td className="py-2 text-right"><span className={`font-semibold ${item.expired ? "text-destructive" : item.daysLeft <= 30 ? "text-accent" : item.daysLeft <= 90 ? "text-foreground" : "text-success"}`}>{item.expired ? "EXPIRED" : `${item.daysLeft}d`}</span></td>
+                      <td className="py-2 text-muted-foreground text-xs">{item.manufacturer || "—"}</td>
+                      <td className="py-2 text-muted-foreground text-xs">{item.supplier_id ? (suppliers.find((s: any) => s.id === item.supplier_id)?.name || "—") : "—"}</td>
+                      <td className="py-2 text-right text-foreground font-medium text-xs">{Number(item.stock)}</td>
+                      <td className="py-2 text-right text-muted-foreground text-xs">₹{Number(item.mrp).toFixed(0)}</td>
+                      <td className="py-2 text-right text-foreground font-medium text-xs">₹{item.stockValue.toFixed(0)}</td>
+                      <td className="py-2 text-xs text-muted-foreground">{item.expiry_date}</td>
+                      <td className="py-2 text-right"><span className={`font-semibold text-xs ${item.expired ? "text-destructive" : item.daysLeft <= 30 ? "text-accent" : item.daysLeft <= 90 ? "text-foreground" : "text-success"}`}>{item.expired ? "EXPIRED" : `${item.daysLeft}d`}</span></td>
                     </tr>
                   ))}</tbody>
                 </table>
