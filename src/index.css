@@ -112,6 +112,11 @@
 }
 
 @layer base {
+  /* Bump base font size to scale all rem-based text ~19% larger globally */
+  html {
+    font-size: 19px;
+  }
+
   * {
     @apply border-border;
   }
@@ -205,5 +210,23 @@
   /* Fix for mobile viewport height */
   .h-screen {
     height: 100dvh;
+  }
+
+  /* ============================================================
+   * PORTRAIT ORIENTATION LOCK
+   * Forces portrait layout on landscape devices via CSS transform.
+   * Works universally — even when Screen Orientation API is denied.
+   * ============================================================ */
+  @media screen and (orientation: landscape) and (max-height: 600px) {
+    html {
+      transform: rotate(-90deg);
+      transform-origin: left top;
+      width: 100vh;
+      height: 100vw;
+      overflow-x: hidden;
+      position: absolute;
+      top: 100%;
+      left: 0;
+    }
   }
 }

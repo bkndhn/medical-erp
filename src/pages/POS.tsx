@@ -109,11 +109,42 @@ export default function POS() {
     };
   }, []);
 
-  // Lock orientation
+  // Lock orientation to portrait — multi-strategy for cross-browser support
   useEffect(() => {
-    try {
-      (screen.orientation as any)?.lock?.('portrait').catch(() => {});
-    } catch {}
+    const lockPortrait = async () => {
+      try {
+        // Strategy 1: Modern Screen Orientation API (Chrome Android, Firefox)
+        if (screen.orientation && typeof (screen.orientation as any).lock === 'function') {
+          await (screen.orientation as any).lock('portrait');
+          return;
+        }
+      } catch { /* API exists but denied — try fallbacks */ }
+
+      try {
+        // Strategy 2: Legacy webkit API (older Android browsers)
+        const so = screen as any;
+        const lockFn =
+          so.lockOrientation ||
+          so.mozLockOrientation ||
+          so.msLockOrientation ||
+          so.webkitLockOrientation;
+        if (lockFn) lockFn.call(screen, 'portrait-primary');
+      } catch { /* Silently ignore — CSS fallback handles the rest */ }
+    };
+
+    lockPortrait();
+
+    // Re-attempt on every orientation change (device rotate)
+    const handleOrientationChange = () => { lockPortrait(); };
+    window.addEventListener('orientationchange', handleOrientationChange);
+    screen.orientation?.addEventListener?.('change', handleOrientationChange);
+
+    return () => {
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      screen.orientation?.removeEventListener?.('change', handleOrientationChange);
+      // Release lock on unmount
+      try { (screen.orientation as any)?.unlock?.(); } catch { }
+    };
   }, []);
 
   // Online/offline detection
