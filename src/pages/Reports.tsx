@@ -742,6 +742,72 @@ export default function Reports() {
               </div>
             )}
           </>}
+
+          {/* Suppliers & Purchases Tab */}
+          {tab === "suppliers" && <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Suppliers</p><p className="text-2xl font-bold text-foreground mt-1">{suppliers.length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Purchases</p><p className="text-2xl font-bold text-primary mt-1">₹{totalPurchases.toLocaleString()}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Purchase Orders</p><p className="text-2xl font-bold text-foreground mt-1">{filteredPurchases.length}</p></div>
+              <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Avg Purchase</p><p className="text-2xl font-bold text-accent mt-1">₹{filteredPurchases.length > 0 ? (totalPurchases / filteredPurchases.length).toFixed(0) : 0}</p></div>
+            </div>
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4">Supplier-wise Purchase Summary</h3>
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[600px]">
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">Supplier</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Orders</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Total</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Avg Order</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Share %</th>
+                  </tr></thead>
+                  <tbody>
+                    {supplierWise.filter(s => searchFilter(s.name)).map((s, i) => (
+                      <tr key={i} className="border-b border-border/30">
+                        <td className="py-2 text-foreground font-medium">{s.name}</td>
+                        <td className="py-2 text-right text-muted-foreground">{s.count}</td>
+                        <td className="py-2 text-right font-semibold text-primary">₹{s.total.toLocaleString()}</td>
+                        <td className="py-2 text-right text-muted-foreground">₹{s.count > 0 ? (s.total / s.count).toFixed(0) : 0}</td>
+                        <td className="py-2 text-right text-accent">{totalPurchases > 0 ? ((s.total / totalPurchases) * 100).toFixed(1) : 0}%</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-border font-bold">
+                      <td className="py-2 text-foreground">TOTAL</td>
+                      <td className="py-2 text-right text-foreground">{filteredPurchases.length}</td>
+                      <td className="py-2 text-right text-primary">₹{totalPurchases.toLocaleString()}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {supplierWise.length === 0 && <p className="text-muted-foreground text-center py-8">No purchase data</p>}
+            </div>
+            <div className="glass-card rounded-xl p-5">
+              <h3 className="text-sm font-semibold text-foreground mb-4">All Purchase Orders</h3>
+              <div className="overflow-x-auto -mx-5 px-5">
+                <table className="w-full text-sm min-w-[700px]">
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">Date</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground">Supplier</th>
+                    <th className="text-left py-2 text-xs text-muted-foreground">Status</th>
+                    <th className="text-right py-2 text-xs text-muted-foreground">Amount</th>
+                  </tr></thead>
+                  <tbody>
+                    {filteredPurchases.filter(p => searchFilter(supplierMap[p.supplier_id] || "")).map((p, i) => (
+                      <tr key={i} className="border-b border-border/30">
+                        <td className="py-2 text-xs text-muted-foreground">{new Date(p.created_at).toLocaleDateString()}</td>
+                        <td className="py-2 text-foreground">{supplierMap[p.supplier_id] || "Unknown"}</td>
+                        <td className="py-2"><span className={`px-2 py-0.5 rounded text-[10px] font-medium ${p.status === "received" ? "bg-success/10 text-success" : p.status === "ordered" ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground"}`}>{p.status}</span></td>
+                        <td className="py-2 text-right font-semibold text-foreground">₹{Number(p.grand_total).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {filteredPurchases.length === 0 && <p className="text-muted-foreground text-center py-8">No purchases</p>}
+            </div>
+          </>}
         </>}
       </div>
 
