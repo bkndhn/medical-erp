@@ -243,16 +243,17 @@ export default function POS() {
     return items.filter(i => i.expiry_date && i.expiry_date >= todayStr && i.expiry_date <= threshold).length;
   }, [items]);
 
-  const addToCart = (item: Item, loose = false) => {
-    // Check stock
+
+
+  const addToCart = useCallback((item: Item, loose = false) => {
     const currentInCart = cart.filter(ci => ci.item.id === item.id).reduce((s, ci) => {
-      if (ci.isLoose && item.weight_per_unit) return s + ci.quantity / item.weight_per_unit;
+      if (ci.isLoose && item.weight_per_unit && item.weight_per_unit > 0) return s + ci.quantity / item.weight_per_unit;
       return s + ci.quantity;
     }, 0);
     const availableStock = Number(item.stock) - currentInCart;
-    const neededStock = loose && item.weight_per_unit ? 1 / item.weight_per_unit : 1;
-    if (availableStock < neededStock) {
-      toast.error(`No stock available for ${item.name}`);
+    const neededStock = loose && item.weight_per_unit && item.weight_per_unit > 0 ? 1 / item.weight_per_unit : 1;
+    if (availableStock < neededStock - 0.0001) {
+      toast.error(`Only ${Number(item.stock)} in stock for ${item.name}`);
       return;
     }
 
@@ -266,31 +267,78 @@ export default function POS() {
       }
       return [...prev, { item, quantity: 1, discount: 0, total: unitPrice, isLoose: loose, loosePrice: loose ? unitPrice : undefined }];
     });
-  };
+  }, [cart]);
 
-  const getCartItemKey = (ci: CartItem) => `${ci.item.id}${ci.isLoose ? "_loose" : ""}`;
+  const getCartItemKey = useCallback((ci: CartItem) => `${ci.item.id}${ci.isLoose ? "_loose" : ""}`, []);
 
-  const updateQty = (id: string, delta: number, isLoose?: boolean) => {
+  const updateQty = useCallback((id: string, delta: number, isLoose?: boolean) => {
     setCart(prev => prev.map(i => {
       if (i.item.id !== id || !!i.isLoose !== !!isLoose) return i;
       const price = i.loosePrice || Number(i.item.price);
       const newQty = Math.max(1, i.quantity + delta);
+
+      if (delta > 0) {
+        // Stock check: sum all other cart lines for this item
+        const otherConsumed = prev.filter(ci => ci !== i && ci.item.id === id).reduce((s, ci) => {
+          if (ci.isLoose && i.item.weight_per_unit && i.item.weight_per_unit > 0)
+            return s + ci.quantity / i.item.weight_per_unit;
+          return s + ci.quantity;
+        }, 0);
+        // Convert newQty to pack units if this is a loose line
+        const newQtyInPacks = (isLoose && i.item.weight_per_unit && i.item.weight_per_unit > 0)
+          ? newQty / i.item.weight_per_unit
+          : newQty;
+        const totalConsumed = otherConsumed + newQtyInPacks;
+        if (totalConsumed > Number(i.item.stock) + 0.0001) {
+          toast.error(`Only ${Number(i.item.stock)} in stock for ${i.item.name}`);
+          return i; // don't update
+        }
+      }
+
       return { ...i, quantity: newQty, total: newQty * price - i.discount };
     }));
-  };
+  }, []);
 
-  const setExactQty = (id: string, qty: number, isLoose?: boolean) => {
+  const setExactQty = useCallback((id: string, qty: number, isLoose?: boolean) => {
     if (qty <= 0) return;
-    setCart(prev => prev.map(i => {
-      if (i.item.id !== id || !!i.isLoose !== !!isLoose) return i;
-      const price = i.loosePrice || Number(i.item.price);
-      return { ...i, quantity: qty, total: qty * price - i.discount };
-    }));
-    setShowQtyEdit(null); setQtyInput("");
-  };
+    setCart(prev => {
+      const targetLine = prev.find(i => i.item.id === id && !!i.isLoose === !!isLoose);
+      if (!targetLine) return prev;
 
-  const removeItem = (id: string, isLoose?: boolean) => setCart(prev => prev.filter(i => !(i.item.id === id && !!i.isLoose === !!isLoose)));
-  const clearCart = () => { setCart([]); setDiscountValue(0); setCustomerName(""); setCustomerPhone(""); };
+      // Convert qty into pack units for stock comparison
+      const qtyInPacks = (isLoose && targetLine.item.weight_per_unit && targetLine.item.weight_per_unit > 0)
+        ? qty / targetLine.item.weight_per_unit
+        : qty;
+
+      // Other cart lines for same item
+      const otherConsumed = prev.filter(i => i !== targetLine && i.item.id === id).reduce((s, ci) => {
+        if (ci.isLoose && targetLine.item.weight_per_unit && targetLine.item.weight_per_unit > 0)
+          return s + ci.quantity / targetLine.item.weight_per_unit;
+        return s + ci.quantity;
+      }, 0);
+
+      const totalConsumed = otherConsumed + qtyInPacks;
+      const maxStock = Number(targetLine.item.stock);
+      if (totalConsumed > maxStock + 0.0001) {
+        const maxAllowedPacks = maxStock - otherConsumed;
+        const maxAllowedQty = (isLoose && targetLine.item.weight_per_unit && targetLine.item.weight_per_unit > 0)
+          ? Math.floor(maxAllowedPacks * targetLine.item.weight_per_unit)
+          : Math.floor(maxAllowedPacks);
+        toast.error(`Only ${maxStock} in stock. Max you can add: ${Math.max(0, maxAllowedQty)}`);
+        return prev; // don't update
+      }
+
+      return prev.map(i => {
+        if (i.item.id !== id || !!i.isLoose !== !!isLoose) return i;
+        const price = i.loosePrice || Number(i.item.price);
+        return { ...i, quantity: qty, total: qty * price - i.discount };
+      });
+    });
+    setShowQtyEdit(null); setQtyInput("");
+  }, []);
+
+  const removeItem = useCallback((id: string, isLoose?: boolean) => setCart(prev => prev.filter(i => !(i.item.id === id && !!i.isLoose === !!isLoose))), []);
+  const clearCart = useCallback(() => { setCart([]); setDiscountValue(0); setCustomerName(""); setCustomerPhone(""); }, []);
 
   // Held bills
   const holdBill = async () => {
@@ -762,19 +810,37 @@ export default function POS() {
               <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1.5">
                 {filteredProducts.map(item => {
                   const outOfStock = Number(item.stock) <= 0;
+                  // How much of this item is already in cart (in pack units)
+                  const inCartPacks = cart.filter(ci => ci.item.id === item.id).reduce((s, ci) => {
+                    if (ci.isLoose && item.weight_per_unit && item.weight_per_unit > 0)
+                      return s + ci.quantity / item.weight_per_unit;
+                    return s + ci.quantity;
+                  }, 0);
+                  const fullyInCart = inCartPacks >= Number(item.stock) - 0.0001 && Number(item.stock) > 0;
+                  const looseAvailable = !outOfStock && !fullyInCart && isPackUnit(item.unit) && item.weight_per_unit && item.weight_per_unit > 0;
+                  const stockLabel = outOfStock ? "No Stock" : fullyInCart ? "All in Cart" : displayStock(item);
+                  const stockColor = outOfStock || fullyInCart ? "text-destructive font-bold" : "text-muted-foreground";
+                  const cardDisabled = outOfStock || fullyInCart;
+
                   return (
-                    <div key={item.id} className={`pos-grid-item text-left touch-manipulation p-2 ${outOfStock ? "opacity-50" : ""}`}>
-                      <button onClick={() => { if (outOfStock) { toast.error("No stock!"); return; } addToCart(item); }} className="w-full text-left">
+                    <div key={item.id} className={`pos-grid-item text-left touch-manipulation p-2 ${cardDisabled ? "opacity-50" : ""}`}>
+                      <button
+                        onClick={() => { if (cardDisabled) { toast.error(outOfStock ? "No stock!" : "All stock already in cart!"); return; } addToCart(item); }}
+                        className="w-full text-left"
+                      >
                         <p className="text-[11px] font-medium text-foreground line-clamp-2 leading-tight">{item.name}</p>
                         <div className="flex items-center gap-1">
                           <span className="text-xs font-bold text-primary">₹{Number(item.price)}</span>
                           {Number(item.mrp) > Number(item.price) && <span className="text-[9px] text-muted-foreground line-through">₹{Number(item.mrp)}</span>}
                         </div>
-                        <span className={`text-[9px] ${outOfStock ? "text-destructive font-bold" : "text-muted-foreground"}`}>{outOfStock ? "No Stock" : displayStock(item)}</span>
+                        <span className={`text-[9px] ${stockColor}`}>{stockLabel}</span>
                       </button>
                       {isPackUnit(item.unit) && item.weight_per_unit && item.weight_per_unit > 0 && !outOfStock && (
-                        <button onClick={() => addToCart(item, true)}
-                          className="w-full mt-0.5 flex items-center justify-center gap-0.5 py-0.5 rounded text-[9px] font-medium bg-accent/10 text-accent hover:bg-accent/20 border border-accent/20 transition-all touch-manipulation">
+                        <button
+                          onClick={() => { if (fullyInCart) { toast.error("All stock already in cart!"); return; } addToCart(item, true); }}
+                          disabled={fullyInCart}
+                          className={`w-full mt-0.5 flex items-center justify-center gap-0.5 py-0.5 rounded text-[9px] font-medium border transition-all touch-manipulation ${fullyInCart ? "bg-muted/40 text-muted-foreground/40 border-border/20 cursor-not-allowed" : "bg-accent/10 text-accent hover:bg-accent/20 border-accent/20"}`}
+                        >
                           L ₹{(Number(item.price) / item.weight_per_unit).toFixed(1)}
                         </button>
                       )}
@@ -803,27 +869,53 @@ export default function POS() {
               </div>
             ) : (
               <div className="divide-y divide-border/50">
-                {cart.map(ci => (
-                  <div key={getCartItemKey(ci)} className="px-2 py-1.5 hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center justify-between gap-1">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-medium text-foreground truncate">
-                          {ci.item.name}
-                          {ci.isLoose && <span className="ml-1 text-[8px] px-0.5 py-0 rounded bg-accent/10 text-accent">L</span>}
-                        </p>
-                        <p className="text-[9px] text-muted-foreground">₹{(ci.loosePrice || Number(ci.item.price)).toFixed(0)} × {ci.quantity}</p>
+                {cart.map(ci => {
+                  // Compute consumed stock for this item across all cart lines
+                  const totalConsumedPacks = cart.filter(x => x.item.id === ci.item.id).reduce((s, x) => {
+                    if (x.isLoose && ci.item.weight_per_unit && ci.item.weight_per_unit > 0)
+                      return s + x.quantity / ci.item.weight_per_unit;
+                    return s + x.quantity;
+                  }, 0);
+                  const maxStock = Number(ci.item.stock);
+                  const isAtMax = totalConsumedPacks >= maxStock - 0.0001;
+                  // How much more can this line add (in its own units)?
+                  const remainingPacks = maxStock - totalConsumedPacks;
+                  const remainingInThisUnit = (ci.isLoose && ci.item.weight_per_unit && ci.item.weight_per_unit > 0)
+                    ? Math.floor(remainingPacks * ci.item.weight_per_unit)
+                    : Math.floor(remainingPacks);
+
+                  return (
+                    <div key={getCartItemKey(ci)} className={`px-2 py-1.5 hover:bg-muted/20 transition-colors ${isAtMax ? "bg-destructive/5" : ""}`}>
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-medium text-foreground truncate">
+                            {ci.item.name}
+                            {ci.isLoose && <span className="ml-1 text-[8px] px-0.5 py-0 rounded bg-accent/10 text-accent">L</span>}
+                          </p>
+                          <p className="text-[9px] text-muted-foreground">
+                            ₹{(ci.loosePrice || Number(ci.item.price)).toFixed(0)} × {ci.quantity}
+                            {isAtMax
+                              ? <span className="ml-1 text-destructive font-semibold">• Max stock</span>
+                              : remainingInThisUnit > 0 && <span className="ml-1 text-muted-foreground">• {remainingInThisUnit} left</span>
+                            }
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-0.5">
+                          <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-2.5 w-2.5" /></button>
+                          <button onClick={() => { setShowQtyEdit(getCartItemKey(ci)); setQtyInput(String(ci.quantity)); }}
+                            className="text-[11px] font-mono font-semibold text-foreground w-7 text-center py-0.5 rounded bg-muted/50 touch-manipulation">{ci.quantity}</button>
+                          <button
+                            onClick={() => updateQty(ci.item.id, 1, ci.isLoose)}
+                            disabled={isAtMax}
+                            className={`p-0.5 rounded touch-manipulation transition-colors ${isAtMax ? "bg-muted/40 text-muted-foreground/30 cursor-not-allowed" : "bg-muted hover:bg-muted/80 text-muted-foreground"}`}
+                          ><Plus className="h-2.5 w-2.5" /></button>
+                        </div>
+                        <p className="text-[11px] font-semibold text-foreground whitespace-nowrap w-12 text-right">₹{ci.total.toFixed(0)}</p>
+                        <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-2.5 w-2.5" /></button>
                       </div>
-                      <div className="flex items-center gap-0.5">
-                        <button onClick={() => updateQty(ci.item.id, -1, ci.isLoose)} className="p-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Minus className="h-2.5 w-2.5" /></button>
-                        <button onClick={() => { setShowQtyEdit(getCartItemKey(ci)); setQtyInput(String(ci.quantity)); }}
-                          className="text-[11px] font-mono font-semibold text-foreground w-7 text-center py-0.5 rounded bg-muted/50 touch-manipulation">{ci.quantity}</button>
-                        <button onClick={() => updateQty(ci.item.id, 1, ci.isLoose)} className="p-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground touch-manipulation"><Plus className="h-2.5 w-2.5" /></button>
-                      </div>
-                      <p className="text-[11px] font-semibold text-foreground whitespace-nowrap w-12 text-right">₹{ci.total.toFixed(0)}</p>
-                      <button onClick={() => removeItem(ci.item.id, ci.isLoose)} className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-2.5 w-2.5" /></button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
