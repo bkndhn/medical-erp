@@ -254,13 +254,13 @@ export default function Inventory() {
             <p className="text-sm">Add your first product to get started</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+            <table className="w-full text-sm min-w-[900px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Name</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">Category</th>
-                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground hidden sm:table-cell">SKU</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Category</th>
+                  <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">SKU</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Price</th>
                   <th className="text-right py-3 px-3 text-xs font-medium text-muted-foreground">Stock</th>
                   <th className="text-left py-3 px-3 text-xs font-medium text-muted-foreground">Unit</th>
@@ -277,12 +277,12 @@ export default function Inventory() {
                       {item.name}
                       {item.color && <span className="ml-1 text-xs text-muted-foreground">({item.color})</span>}
                     </td>
-                    <td className="py-3 px-3 text-xs text-muted-foreground hidden sm:table-cell">
+                    <td className="py-3 px-3 text-xs text-muted-foreground">
                       {item.category_id && categoryMap[item.category_id] ? (
                         <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">{categoryMap[item.category_id].icon} {categoryMap[item.category_id].name}</span>
                       ) : "—"}
                     </td>
-                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs hidden sm:table-cell">{item.sku || "—"}</td>
+                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{item.sku || "—"}</td>
                     <td className="py-3 px-3 text-right text-foreground">₹{Number(item.price).toFixed(0)}</td>
                     <td className="py-3 px-3 text-right">
                       <span className={`font-semibold ${Number(item.stock) <= (item.low_stock_threshold || 10) ? "text-accent" : "text-success"}`}>
