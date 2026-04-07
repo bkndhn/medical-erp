@@ -214,19 +214,35 @@
 
   /* ============================================================
    * PORTRAIT ORIENTATION LOCK
-   * Forces portrait layout on landscape devices via CSS transform.
-   * Works universally — even when Screen Orientation API is denied.
+   * Shows a full-screen overlay when device is in landscape,
+   * prompting the user to rotate back. This avoids CSS transform
+   * issues with touch coordinates on Android browsers.
    * ============================================================ */
   @media screen and (orientation: landscape) and (max-height: 600px) {
-    html {
-      transform: rotate(-90deg);
-      transform-origin: left top;
-      width: 100vh;
-      height: 100vw;
-      overflow-x: hidden;
-      position: absolute;
-      top: 100%;
-      left: 0;
+    #root {
+      display: none !important;
     }
+    body::after {
+      content: '📱 Please rotate your device to portrait mode';
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: hsl(222 47% 6%);
+      color: hsl(210 40% 96%);
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 18px;
+      font-weight: 600;
+      text-align: center;
+      padding: 2rem;
+      animation: fadeIn 0.3s ease-out;
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 }

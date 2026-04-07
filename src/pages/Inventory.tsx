@@ -194,34 +194,40 @@ export default function Inventory() {
 
   return (
     <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="ml-10 md:ml-0">
-            <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2">
-              <Package className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Inventory
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-3 sm:px-6 py-3 sm:py-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="ml-10 md:ml-0 min-w-0">
+            <h1 className="text-base sm:text-2xl font-bold text-foreground flex items-center gap-2">
+              <Package className="h-5 sm:h-6 w-5 sm:w-6 text-primary shrink-0" /> Inventory
             </h1>
-            <p className="text-sm text-muted-foreground">{items.length} products • {lowStockCount} low stock • {categories.length} categories</p>
+            <p className="text-xs sm:text-sm text-muted-foreground truncate">{items.length} products • {lowStockCount} low stock</p>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setFilterLowStock(!filterLowStock)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all touch-manipulation ${filterLowStock ? "bg-accent/15 text-accent border border-accent/30" : "bg-muted text-muted-foreground"}`}>
-              <AlertTriangle className="h-3.5 w-3.5" /> Low ({lowStockCount})
-            </button>
-            <select value={filterExpiry || ""} onChange={e => setFilterExpiry(e.target.value || null)}
-              className="px-2 py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground border border-border focus:outline-none">
-              <option value="">All Expiry</option>
-              <option value="expired">Expired</option>
-              <option value="30d">≤30 days</option>
-              <option value="90d">≤90 days</option>
-            </select>
+          <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={() => { setEditCategory({ name: "", icon: "📁", color: null, sort_order: categories.length }); setShowCategoryForm(true); }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground touch-manipulation">
-              <FolderPlus className="h-3.5 w-3.5" /> Category
+              className="p-2 sm:px-3 sm:py-2 rounded-lg text-xs font-medium bg-muted text-muted-foreground hover:text-foreground touch-manipulation"
+              title="Add Category">
+              <FolderPlus className="h-4 w-4 sm:hidden" />
+              <span className="hidden sm:inline-flex items-center gap-1.5"><FolderPlus className="h-3.5 w-3.5" /> Category</span>
             </button>
-            <button onClick={openNew} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
-              <Plus className="h-4 w-4" /> Add Item
+            <button onClick={openNew} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs sm:text-sm font-medium hover:bg-primary/90 touch-manipulation">
+              <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Item</span><span className="sm:hidden">Add</span>
             </button>
           </div>
+        </div>
+
+        {/* Filter row */}
+        <div className="flex items-center gap-1.5 mt-2 overflow-x-auto scrollbar-thin">
+          <button onClick={() => setFilterLowStock(!filterLowStock)}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all touch-manipulation whitespace-nowrap shrink-0 ${filterLowStock ? "bg-accent/15 text-accent border border-accent/30" : "bg-muted text-muted-foreground"}`}>
+            <AlertTriangle className="h-3 w-3" /> Low ({lowStockCount})
+          </button>
+          <select value={filterExpiry || ""} onChange={e => setFilterExpiry(e.target.value || null)}
+            className="px-2 py-1.5 rounded-lg text-[11px] font-medium bg-muted text-muted-foreground border border-border focus:outline-none shrink-0">
+            <option value="">All Expiry</option>
+            <option value="expired">Expired</option>
+            <option value="30d">≤30 days</option>
+            <option value="90d">≤90 days</option>
+          </select>
         </div>
 
         {/* Category filter bar */}
@@ -254,7 +260,60 @@ export default function Inventory() {
             <p className="text-sm">Add your first product to get started</p>
           </div>
         ) : (
-          <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+          {/* Mobile card layout */}
+          <div className="md:hidden space-y-2">
+            {filtered.map((item) => {
+              const isLow = Number(item.stock) <= (item.low_stock_threshold || 10);
+              const isOut = Number(item.stock) === 0;
+              return (
+                <div key={item.id} className={`glass-card rounded-xl p-3 ${isOut ? "border-destructive/30 bg-destructive/5" : isLow ? "border-accent/30 bg-accent/5" : ""}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">{item.name}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        {item.category_id && categoryMap[item.category_id] && (
+                          <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">{categoryMap[item.category_id].icon} {categoryMap[item.category_id].name}</span>
+                        )}
+                        {item.sku && <span className="text-[10px] font-mono text-muted-foreground">{item.sku}</span>}
+                        {item.unit && <span className="text-[10px] text-muted-foreground">{item.unit}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openEdit(item)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation"><Edit2 className="h-4 w-4" /></button>
+                      <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Price</p>
+                        <p className="text-sm font-semibold text-foreground">₹{Number(item.price)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Stock</p>
+                        <p className={`text-sm font-bold ${isOut ? "text-destructive" : isLow ? "text-accent" : "text-success"}`}>{isOut ? "OUT" : Number(item.stock)}</p>
+                      </div>
+                      {item.supplier_id && supplierMap[item.supplier_id] && (
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">Supplier</p>
+                          <p className="text-xs text-foreground truncate max-w-[80px]">{supplierMap[item.supplier_id]}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      {item.expiry_date ? (() => {
+                        const daysLeft = Math.ceil((new Date(item.expiry_date).getTime() - Date.now()) / 86400000);
+                        return <span className={`text-[10px] ${daysLeft <= 0 ? "text-destructive font-bold" : daysLeft <= 30 ? "text-accent" : "text-muted-foreground"}`}>{daysLeft <= 0 ? "EXPIRED" : `Exp ${daysLeft}d`}</span>;
+                      })() : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop table layout */}
+          <div className="hidden md:block overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
             <table className="w-full text-sm min-w-[900px]">
               <thead>
                 <tr className="border-b border-border">
@@ -349,8 +408,8 @@ export default function Inventory() {
 
       {/* Item Form Modal */}
       {showForm && editItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowForm(false)}>
-          <div className="glass-card rounded-2xl p-6 w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto scrollbar-thin animate-fade-in" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowForm(false)}>
+          <div className="glass-card rounded-t-2xl sm:rounded-2xl p-4 sm:p-6 w-full max-w-2xl sm:mx-4 overflow-y-auto scrollbar-thin animate-fade-in" style={{ maxHeight: 'calc(100dvh - 8px)' }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-foreground">{editItem.id ? "Edit Item" : "New Item"}</h3>
               <button onClick={() => setShowForm(false)} className="p-1 rounded hover:bg-muted text-muted-foreground"><X className="h-5 w-5" /></button>
