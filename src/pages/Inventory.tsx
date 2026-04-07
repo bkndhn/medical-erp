@@ -415,8 +415,8 @@ export default function Inventory() {
 
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Batch Number</label>
                 <input type="text" value={editItem.batch_number || ""} onChange={e => setEditItem({ ...editItem, batch_number: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Expiry Date</label>
-                <input type="date" value={editItem.expiry_date || ""} onChange={e => setEditItem({ ...editItem, expiry_date: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+              <div><label className="text-xs font-medium text-accent mb-1 block">Expiry Date *</label>
+                <input type="date" value={editItem.expiry_date || ""} onChange={e => setEditItem({ ...editItem, expiry_date: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
 
               {isMedical && <>
                 <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Composition</label>
