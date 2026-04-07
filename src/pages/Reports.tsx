@@ -547,6 +547,8 @@ export default function Reports() {
               <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" /> GST Rate-wise Summary</h3>
               <div className="overflow-x-auto -mx-5 px-5">
                 <table className="w-full text-sm min-w-[700px]">
+                  <thead><tr className="border-b border-border">
+                    <th className="text-left py-2 text-xs text-muted-foreground">GST Rate</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Items</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">Taxable Value</th>
                     <th className="text-right py-2 text-xs text-muted-foreground">CGST</th>
