@@ -5,13 +5,14 @@ import {
   LayoutDashboard, ShoppingCart, Package, Users, FileText,
   Settings, Truck, CreditCard, Building2,
   Monitor, ChevronLeft, ChevronRight, Zap, Clock,
-  BarChart3, Wallet, MessageSquare, LogOut, Shield, Menu, X, UserCog
+  BarChart3, Wallet, MessageSquare, LogOut, Shield, Menu, X, UserCog, ClipboardList
 } from "lucide-react";
 
 const allNav = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, page: "dashboard" },
   { title: "POS Billing", url: "/pos", icon: ShoppingCart, page: "pos", highlight: true },
   { title: "Inventory", url: "/inventory", icon: Package, page: "inventory", section: "Modules" },
+  { title: "Shortages", url: "/shortages", icon: ClipboardList, page: "shortages", section: "Modules" },
   { title: "Purchases", url: "/purchases", icon: Truck, page: "purchases", section: "Modules" },
   { title: "Customers", url: "/customers", icon: Users, page: "customers", section: "Modules" },
   { title: "Suppliers", url: "/suppliers", icon: Users, page: "suppliers", section: "Modules" },

@@ -17,6 +17,7 @@ interface Item {
   composition: string | null; manufacturer: string | null;
   weight_per_unit: number | null; is_weighable: boolean | null;
   category_id: string | null; is_active: boolean; supplier_id: string | null;
+  rack_location: string | null; is_schedule_h: boolean | null;
 }
 
 interface Category {
@@ -30,8 +31,9 @@ const CATEGORY_ICONS = ["📦", "💊", "🧴", "🥛", "🍎", "👕", "🔧", 
 
 const emptyItem: Partial<Item> = {
   name: "", sku: "", barcode: "", price: 0, mrp: 0, cost_price: 0,
-  unit: "pcs", gst_rate: 0, stock: 0, low_stock_threshold: 10,
+  unit: "strip", gst_rate: 0, stock: 0, low_stock_threshold: 10,
   batch_number: "", expiry_date: null, is_active: true, category_id: null,
+  rack_location: "", is_schedule_h: false,
 };
 
 export default function Inventory() {
@@ -134,6 +136,7 @@ export default function Inventory() {
           composition: editItem.composition, manufacturer: editItem.manufacturer,
           weight_per_unit: editItem.weight_per_unit, is_weighable: editItem.is_weighable,
           is_active: editItem.is_active, category_id: editItem.category_id || null, supplier_id: (editItem as any).supplier_id || null,
+          rack_location: editItem.rack_location || null, is_schedule_h: editItem.is_schedule_h || false,
         }).eq("id", editItem.id);
         if (error) throw error;
         toast.success("Item updated");
@@ -648,10 +651,26 @@ export default function Inventory() {
                 <input type="date" value={editItem.expiry_date || ""} onChange={e => setEditItem({ ...editItem, expiry_date: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
 
               {isMedical && <>
-                <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Composition</label>
-                  <input type="text" value={editItem.composition || ""} onChange={e => setEditItem({ ...editItem, composition: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
-                <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Manufacturer</label>
+                <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Composition / Salt</label>
+                  <input type="text" value={editItem.composition || ""} onChange={e => setEditItem({ ...editItem, composition: e.target.value })}
+                    placeholder="e.g., Paracetamol 500mg"
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+                <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Manufacturer / Brand</label>
                   <input type="text" value={editItem.manufacturer || ""} onChange={e => setEditItem({ ...editItem, manufacturer: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+                <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Rack / Shelf Location</label>
+                  <input type="text" value={editItem.rack_location || ""} onChange={e => setEditItem({ ...editItem, rack_location: e.target.value })}
+                    placeholder="e.g., Rack 2, Box C"
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" /></div>
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-destructive/5 border border-destructive/20">
+                  <input type="checkbox" id="schedule-h-toggle"
+                    checked={editItem.is_schedule_h || false}
+                    onChange={e => setEditItem({ ...editItem, is_schedule_h: e.target.checked })}
+                    className="h-4 w-4 rounded accent-destructive" />
+                  <div>
+                    <label htmlFor="schedule-h-toggle" className="text-xs font-semibold text-destructive cursor-pointer">Schedule H / H1 Drug</label>
+                    <p className="text-[10px] text-muted-foreground">Prescription required at POS billing</p>
+                  </div>
+                </div>
               </>}
 
               {isTextile && <>

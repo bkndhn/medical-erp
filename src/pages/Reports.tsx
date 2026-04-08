@@ -3,10 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
-import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare, Search, CreditCard, TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { BarChart3, Package, AlertTriangle, Calendar, Building2, FileText, Monitor, Receipt, Eye, X, Printer, MessageSquare, Search, CreditCard, TrendingUp, TrendingDown, DollarSign, DownloadCloud, FileSpreadsheet } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from "recharts";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 import { printReceipt, generateWhatsAppText } from "@/lib/printService";
+import * as XLSX from "xlsx";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
 const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices", "suppliers"] as const;
@@ -198,6 +199,86 @@ export default function Reports() {
     });
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [filteredPurchases, supplierMap]);
+
+  // --- External Exports (Feature 5) ---
+  const exportGSTR1Json = () => {
+    const bizDetailStr = localStorage.getItem("business_details");
+    const biz = bizDetailStr ? JSON.parse(bizDetailStr) : {};
+    const gstin = biz.gstNumber || "URP";
+    
+    // FP is current period formatted as MMYYYY.
+    const fpDate = dateFrom || new Date();
+    const fp = `${String(fpDate.getMonth() + 1).padStart(2, '0')}${fpDate.getFullYear()}`;
+
+    // Simplified B2CS structure (assuming mostly B2C for retail)
+    const b2cs = gstWiseReport.map(g => ({
+        sply_ty: "INTRA",
+        rt: g.rate,
+        typ: "OE",
+        pos: biz.stateCode || "27", // Default to state code 27 (Maharashtra) if unknown
+        txval: Number(g.taxableValue.toFixed(2)),
+        iamt: 0,
+        camt: Number(g.cgst.toFixed(2)),
+        samt: Number(g.sgst.toFixed(2)),
+        csamt: 0
+    }));
+
+    // HSN Structure
+    const hsnData = hsnWiseSales.map((h, i) => ({
+        num: i + 1,
+        hsn_sc: h.hsn,
+        desc: "Goods", 
+        uqc: "NOS",
+        qty: h.qty,
+        val: Number((h.revenue).toFixed(2)),
+        txval: Number((h.revenue - h.tax).toFixed(2)),
+        iamt: 0,
+        camt: Number((h.tax / 2).toFixed(2)),
+        samt: Number((h.tax / 2).toFixed(2)),
+        csamt: 0
+    }));
+
+    const json = { gstin, fp, gt: 0, cur_gt: 0, b2b: [], b2cs, hsn: { data: hsnData } };
+    const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `GSTR1_${gstin}_${fp}.json`;
+    link.click();
+  };
+
+  const exportEnhancedHSNExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: HSN Summary
+    const hsnSheetData = hsnWiseSales.map(h => ({
+      "HSN/SAC": h.hsn,
+      "Description": "Goods",
+      "UQC": "NOS",
+      "Total Quantity": h.qty,
+      "Total Value": Number(h.revenue.toFixed(2)),
+      "Taxable Value": Number((h.revenue - h.tax).toFixed(2)),
+      "Integrated Tax Amount": 0,
+      "Central Tax Amount": Number((h.tax / 2).toFixed(2)),
+      "State/UT Tax Amount": Number((h.tax / 2).toFixed(2)),
+      "Cess Amount": 0
+    }));
+    const ws1 = XLSX.utils.json_to_sheet(hsnSheetData);
+    XLSX.utils.book_append_sheet(wb, ws1, "HSN Summary");
+
+    // Sheet 2: Rate-wise Summary
+    const rateSheetData = gstWiseReport.map(g => ({
+      "Rate": `${g.rate}%`,
+      "Items Count": g.items,
+      "Taxable Value": Number(g.taxableValue.toFixed(2)),
+      "CGST": Number(g.cgst.toFixed(2)),
+      "SGST": Number(g.sgst.toFixed(2)),
+      "Total Tax": Number(g.totalTax.toFixed(2))
+    }));
+    const ws2 = XLSX.utils.json_to_sheet(rateSheetData);
+    XLSX.utils.book_append_sheet(wb, ws2, "Rate Summary");
+
+    XLSX.writeFile(wb, `GST_Report_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
 
   const deviceWiseSales = useMemo(() => {
     const deviceMap = Object.fromEntries(devices.map(d => [d.id, d.name]));
@@ -543,8 +624,18 @@ export default function Reports() {
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total SGST</p><p className="text-2xl font-bold text-accent mt-1">₹{gstWiseReport.reduce((s, g) => s + g.sgst, 0).toFixed(0)}</p></div>
               <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Tax</p><p className="text-2xl font-bold text-primary mt-1">₹{gstWiseReport.reduce((s, g) => s + g.totalTax, 0).toFixed(0)}</p></div>
             </div>
-            <div className="glass-card rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" /> GST Rate-wise Summary</h3>
+            <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" /> GST Rate-wise Summary</h3>
+              <div className="flex gap-2">
+                <button onClick={exportGSTR1Json} className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-medium rounded-lg transition-colors touch-manipulation">
+                  <DownloadCloud className="h-3.5 w-3.5" /> GSTR-1 JSON
+                </button>
+                <button onClick={exportEnhancedHSNExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-success/10 hover:bg-success/20 text-success text-xs font-medium rounded-lg transition-colors touch-manipulation">
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> HSN Excel
+                </button>
+              </div>
+            </div>
+            <div className="glass-card rounded-xl p-5 mb-4">
               <div className="overflow-x-auto -mx-5 px-5">
                 <table className="w-full text-sm min-w-[700px]">
                   <thead><tr className="border-b border-border">

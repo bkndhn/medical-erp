@@ -30,7 +30,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showAlerts, setShowAlerts] = useState(false);
   const [showInventory, setShowInventory] = useState(false);
-  const [showValuation, setShowValuation] = useState(false);
   const [dailySalesData, setDailySalesData] = useState<any[]>([]);
   const [activeVelocityFilter, setActiveVelocityFilter] = useState<"all" | "fast" | "medium" | "slow">("all");
   const [inventorySearch, setInventorySearch] = useState("");
@@ -379,108 +378,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* ── App Valuation Section ─────────────────────────────────── */}
-          <div className="glass-card rounded-xl p-5">
-            <button onClick={() => setShowValuation(!showValuation)} className="w-full flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Info className="h-4 w-4 text-primary" />App Valuation & Market Worth</h3>
-              {showValuation ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-            </button>
 
-            {showValuation && (
-              <div className="mt-5 space-y-6 animate-fade-in">
-                {/* Development cost table */}
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">💻 Development Cost Estimate</h4>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead><tr className="border-b border-border/50">
-                        <th className="text-left py-2 px-3 text-muted-foreground font-medium">Module</th>
-                        <th className="text-right py-2 px-3 text-muted-foreground font-medium">Freelancer (₹)</th>
-                        <th className="text-right py-2 px-3 text-muted-foreground font-medium">Agency (₹)</th>
-                        <th className="text-right py-2 px-3 text-muted-foreground font-medium hidden sm:table-cell">Hours</th>
-                      </tr></thead>
-                      <tbody>
-                        {[
-                          ["Authentication & Multi-tenant", "15,000", "45,000", "40"],
-                          ["POS Billing with Barcode", "25,000", "80,000", "70"],
-                          ["Inventory Management", "20,000", "60,000", "55"],
-                          ["Supplier & Purchase Module", "18,000", "55,000", "50"],
-                          ["Customer & CRM", "12,000", "35,000", "30"],
-                          ["Accounting & Payments", "20,000", "65,000", "60"],
-                          ["Reports & Analytics", "22,000", "70,000", "65"],
-                          ["User Management + RBAC", "15,000", "45,000", "40"],
-                          ["WhatsApp Integration", "10,000", "30,000", "25"],
-                          ["PWA / Offline Support", "12,000", "40,000", "35"],
-                          ["Attendance Module", "8,000", "25,000", "20"],
-                          ["Branch Management", "8,000", "25,000", "20"],
-                          ["Settings & Customization", "10,000", "30,000", "25"],
-                          ["Super Admin Panel", "12,000", "40,000", "30"],
-                          ["UI/UX Design", "15,000", "60,000", "50"],
-                          ["Testing & QA", "8,000", "30,000", "25"],
-                          ["Deployment & DevOps", "5,000", "25,000", "15"],
-                        ].map(([mod, fl, ag, hr], i) => (
-                          <tr key={i} className={`border-b border-border/30 hover:bg-muted/20 transition-colors ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
-                            <td className="py-2 px-3 font-medium text-foreground">{mod}</td>
-                            <td className="py-2 px-3 text-right text-success font-medium">₹{fl}</td>
-                            <td className="py-2 px-3 text-right text-accent font-medium">₹{ag}</td>
-                            <td className="py-2 px-3 text-right text-muted-foreground hidden sm:table-cell">{hr}h</td>
-                          </tr>
-                        ))}
-                        <tr className="border-t-2 border-border bg-muted/30 font-bold">
-                          <td className="py-3 px-3 text-foreground font-bold">TOTAL</td>
-                          <td className="py-3 px-3 text-right text-success font-bold text-sm">₹2,35,000</td>
-                          <td className="py-3 px-3 text-right text-accent font-bold text-sm">₹7,60,000</td>
-                          <td className="py-3 px-3 text-right text-muted-foreground hidden sm:table-cell">655h</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Market value */}
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">💰 Market Worth to Customer</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {[
-                      { tier: "Small Medical Store", users: "1–3 users", price: "₹999–₹1,499/mo", annual: "₹12k–18k/yr", note: "Single branch, basic POS & inventory", color: "border-success/30 bg-success/5", tc: "text-success" },
-                      { tier: "Mid-size Pharmacy", users: "5–15 users", price: "₹2,999–₹4,999/mo", annual: "₹36k–60k/yr", note: "Multi-branch, reports, WhatsApp, CRM", color: "border-accent/30 bg-accent/5", tc: "text-accent" },
-                      { tier: "Chain / Distributor", users: "15+ users", price: "₹9,999–₹19,999/mo", annual: "₹1.2L–2.4L/yr", note: "Full features + custom integrations + SLA", color: "border-primary/30 bg-primary/5", tc: "text-primary" },
-                    ].map((t, i) => (
-                      <div key={i} className={`p-4 rounded-xl border ${t.color}`}>
-                        <p className={`text-sm font-bold ${t.tc}`}>{t.tier}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{t.users}</p>
-                        <p className={`text-lg font-bold mt-2 ${t.tc}`}>{t.price}</p>
-                        <p className="text-[10px] text-muted-foreground">{t.annual}</p>
-                        <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">{t.note}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Comparable SaaS */}
-                <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">📊 Comparable SaaS Products</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {[
-                      { name: "Busy Accounting", price: "₹7,200/yr", note: "No POS/branch" },
-                      { name: "Marg ERP", price: "₹15,000/yr", note: "Desktop only" },
-                      { name: "GoFrugal", price: "₹24,000/yr", note: "Pharma-specific" },
-                      { name: "Vyapar", price: "₹3,599/yr", note: "No multi-branch" },
-                    ].map((c, i) => (
-                      <div key={i} className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                        <p className="text-xs font-semibold text-foreground">{c.name}</p>
-                        <p className="text-sm font-bold text-primary mt-0.5">{c.price}</p>
-                        <p className="text-[10px] text-muted-foreground">{c.note}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
-                    <span className="font-semibold text-primary">Your competitive edge:</span> This app matches GoFrugal-level features at 30–40% lower cost, while being cloud-native, PWA-ready, multi-branch, and customizable — placing it in the <span className="font-semibold text-foreground">₹25,000–₹50,000/yr per customer</span> sweet spot for mid-market medical retail.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
 
         </>}
       </div>

@@ -14,13 +14,13 @@ const ROLE_COLORS: Record<string, string> = {
   staff: "bg-muted text-muted-foreground",
 };
 
-const ALL_PAGES = ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users"];
+const ALL_PAGES = ["dashboard", "pos", "inventory", "shortages", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "transfers", "returns", "branches", "devices", "payments", "whatsapp", "settings", "users"];
 
 const DEFAULT_PAGE_PERMISSIONS: Record<string, string[]> = {
   admin: ALL_PAGES,
-  manager: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "payments"],
-  cashier: ["dashboard", "pos", "customers", "invoices"],
-  staff: ["dashboard", "inventory"],
+  manager: ["dashboard", "pos", "inventory", "shortages", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "transfers", "returns", "payments"],
+  cashier: ["dashboard", "pos", "shortages", "customers", "invoices"],
+  staff: ["dashboard", "inventory", "shortages"],
 };
 
 export default function UserManagement() {

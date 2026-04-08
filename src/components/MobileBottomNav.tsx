@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, ShoppingCart, Package, FileText, MoreHorizontal, X,
   Users, Truck, Wallet, BarChart3, Building2, Monitor, CreditCard, Clock,
-  MessageSquare, Settings, Shield, UserCog, Zap
+  MessageSquare, Settings, Shield, UserCog, Zap, ClipboardList
 } from "lucide-react";
 
 const primaryNav = [
@@ -15,6 +15,7 @@ const primaryNav = [
 
 const moreNav = [
   { title: "Purchases", url: "/purchases", icon: Truck, page: "purchases" },
+  { title: "Shortages", url: "/shortages", icon: ClipboardList, page: "shortages" },
   { title: "Customers", url: "/customers", icon: Users, page: "customers" },
   { title: "Suppliers", url: "/suppliers", icon: Users, page: "suppliers" },
   { title: "Accounting", url: "/accounting", icon: Wallet, page: "accounting" },

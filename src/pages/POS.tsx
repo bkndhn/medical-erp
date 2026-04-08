@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone, Undo2, Calendar } from "lucide-react";
+import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone, Undo2, Calendar, ClipboardList, MapPin, Camera, Upload, AlertCircle, FileText } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
@@ -15,7 +15,8 @@ interface Item {
   price: number; mrp: number; gst_rate: number | null; stock: number;
   category_id: string | null; unit: string | null; is_weighable: boolean | null;
   weight_per_unit: number | null; expiry_date: string | null; supplier_id: string | null;
-  cost_price: number | null;
+  cost_price: number | null; composition: string | null; rack_location: string | null;
+  is_schedule_h: boolean | null;
 }
 
 interface CartItem {
@@ -93,6 +94,15 @@ export default function POS() {
   const [whatsappShare, setWhatsappShare] = useState(() => localStorage.getItem("pos_whatsapp_share") === "true");
 
   const [showMobileShortcuts, setShowMobileShortcuts] = useState(false);
+
+  // Rx Prescription state
+  const [rxDoctorName, setRxDoctorName] = useState("");
+  const [rxImageUrl, setRxImageUrl] = useState<string | null>(null);
+  const [rxUploading, setRxUploading] = useState(false);
+  const [rxCamActive, setRxCamActive] = useState(false);
+  const rxVideoRef = useRef<HTMLVideoElement>(null);
+  const rxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const rxFileRef = useRef<HTMLInputElement>(null);
 
   const receiptRef = useRef<HTMLDivElement>(null);
   const [lastSaleForPrint, setLastSaleForPrint] = useState<{sale: any, items: any[], customerInfo?: any} | null>(null);
@@ -304,10 +314,33 @@ export default function POS() {
     if (activeCategory !== "all") filtered = filtered.filter(p => p.category_id === activeCategory);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(p => p.name.toLowerCase().includes(q) || p.barcode?.includes(q) || p.sku?.toLowerCase().includes(q));
+      filtered = filtered.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        p.barcode?.includes(q) ||
+        p.sku?.toLowerCase().includes(q) ||
+        p.composition?.toLowerCase().includes(q)
+      );
     }
     return filtered;
   }, [items, activeCategory, searchQuery]);
+
+  // Salt/composition-based substitute suggestions (shown when search yields no results)
+  const substituteProducts = useMemo(() => {
+    if (!searchQuery || filteredProducts.length > 0) return [];
+    const q = searchQuery.toLowerCase();
+    const today = new Date().toISOString().split('T')[0];
+    // Find items whose name matches but composition matches something in stock
+    const matchedCompositions = items
+      .filter(i => i.composition && i.name.toLowerCase().includes(q))
+      .map(i => i.composition!.toLowerCase());
+    if (matchedCompositions.length === 0) return [];
+    return items.filter(i =>
+      i.composition &&
+      matchedCompositions.some(c => i.composition!.toLowerCase().includes(c) || c.includes(i.composition!.toLowerCase())) &&
+      Number(i.stock) > 0 &&
+      (!i.expiry_date || i.expiry_date >= today)
+    );
+  }, [items, searchQuery, filteredProducts]);
 
   const expiredCount = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -532,10 +565,57 @@ export default function POS() {
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };
 
+  // Rx helpers
+  const hasScheduleH = useMemo(() => cart.some(ci => ci.item.is_schedule_h), [cart]);
+
+  const startRxCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (rxVideoRef.current) { rxVideoRef.current.srcObject = stream; rxVideoRef.current.play(); }
+      setRxCamActive(true);
+    } catch { toast.error("Camera not available — use file upload instead"); }
+  };
+
+  const captureRxPhoto = () => {
+    if (!rxVideoRef.current || !rxCanvasRef.current) return;
+    const video = rxVideoRef.current;
+    const canvas = rxCanvasRef.current;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d')?.drawImage(video, 0, 0);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    setRxImageUrl(dataUrl);
+    // Stop camera stream
+    (video.srcObject as MediaStream)?.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+    setRxCamActive(false);
+  };
+
+  const uploadRxFile = async (file: File) => {
+    setRxUploading(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = (e) => setRxImageUrl(e.target?.result as string);
+      reader.readAsDataURL(file);
+    } finally { setRxUploading(false); }
+  };
+
+  const stopRxCamera = () => {
+    if (rxVideoRef.current) {
+      (rxVideoRef.current.srcObject as MediaStream)?.getTracks().forEach(t => t.stop());
+      rxVideoRef.current.srcObject = null;
+    }
+    setRxCamActive(false);
+  };
+
   // INSTANT complete sale
   const completeSale = async () => {
     if (!tenantId || cart.length === 0 || isSaving) return;
     if (totalPaid < roundedTotal - 0.01) { toast.error(`Short by ₹${(roundedTotal - totalPaid).toFixed(2)}`); return; }
+    // Rx required check for Schedule H
+    if (hasScheduleH && !rxImageUrl && !rxDoctorName) {
+      toast.error("⚕️ Schedule H drug in cart — please attach prescription or enter doctor name");
+      return;
+    }
     setIsSaving(true);
 
     const isSplit = paymentLines.length > 1;
@@ -549,6 +629,23 @@ export default function POS() {
       return s + costPrice * qty;
     }, 0);
 
+    // Upload Rx image to Supabase Storage if base64
+    let finalRxUrl = rxImageUrl;
+    if (rxImageUrl && rxImageUrl.startsWith('data:')) {
+      try {
+        const base64 = rxImageUrl.split(',')[1];
+        const byteArray = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        const fileName = `rx_${Date.now()}.jpg`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('prescriptions')
+          .upload(fileName, byteArray, { contentType: 'image/jpeg' });
+        if (!uploadError && uploadData) {
+          const { data: urlData } = supabase.storage.from('prescriptions').getPublicUrl(uploadData.path);
+          finalRxUrl = urlData.publicUrl;
+        }
+      } catch { /* keep base64 as fallback */ }
+    }
+
     const saleData = {
       tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
       invoice_number: billNo, subtotal, discount: billDiscount, tax_total: gstTotal,
@@ -556,6 +653,9 @@ export default function POS() {
       amount_paid: totalPaid, change_amount: changeAmount, status: "completed" as any,
       cost_total: Math.round(costTotal * 100) / 100,
       notes: customerName ? `Customer: ${customerName}${customerPhone ? ` (${customerPhone})` : ""}` : null,
+      rx_image_url: finalRxUrl || null,
+      doctor_name: rxDoctorName || null,
+      rx_required: hasScheduleH,
     };
 
     const saleItemsData = cart.map(i => ({
@@ -575,6 +675,7 @@ export default function POS() {
     setBillCount(prev => prev + 1);
     setIsSaving(false);
     setShowCustomerForm(false);
+    setRxDoctorName(""); setRxImageUrl(null); stopRxCamera();
 
     const modeStr = isSplit ? paymentLines.filter(l => l.amount > 0).map(l => `₹${l.amount} ${l.mode.toUpperCase()}`).join(" + ") : primaryMode.toUpperCase();
     toast.success(`${savedBillNo} • ₹${roundedTotal} via ${modeStr}`);
@@ -692,7 +793,7 @@ export default function POS() {
 
   const reprintBill = async (sale: any) => {
     const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
-    printReceipt(sale, items || []);
+    setLastSaleForPrint({ sale, items: items || [] });
     setShowReprint(false);
   };
 
@@ -816,6 +917,25 @@ export default function POS() {
     }
   };
 
+  const logToShortageBook = async (itemName: string) => {
+    if (!tenantId || !itemName.trim()) return;
+    try {
+      const { error } = await supabase.from("shortage_book").insert([{
+        tenant_id: tenantId,
+        item_name: itemName.trim(),
+        requested_quantity: "1",
+        priority: "high",
+        status: "pending",
+        notes: "Logged from POS - item not found during billing",
+      }]);
+      if (error) throw error;
+      toast.success(`"${itemName}" logged to Shortage Book!`);
+      setSearchQuery("");
+    } catch (err: any) {
+      toast.error("Failed to log shortage: " + err.message);
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <header className="flex items-center justify-between px-3 h-11 border-b border-border bg-card/50 backdrop-blur shrink-0">
@@ -890,8 +1010,41 @@ export default function POS() {
 
           <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
             {filteredProducts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                <p className="text-sm">No products found</p>
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3 py-4">
+                <Search className="h-8 w-8 opacity-20" />
+                <p className="text-sm font-medium">{searchQuery ? `No results for "${searchQuery}"` : 'No products found'}</p>
+
+                {/* Salt/Composition Substitute Suggestions (Feature 2) */}
+                {substituteProducts.length > 0 && (
+                  <div className="w-full max-w-md">
+                    <div className="flex items-center gap-2 mb-2 px-2">
+                      <Pill className="h-3.5 w-3.5 text-primary" />
+                      <p className="text-xs font-semibold text-primary">Available substitutes (same salt):</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 px-2">
+                      {substituteProducts.map(item => (
+                        <button key={item.id}
+                          onClick={() => { addToCart(item); setSearchQuery(""); }}
+                          className="flex flex-col items-start p-2.5 rounded-lg bg-primary/8 border border-primary/20 hover:bg-primary/15 transition-all touch-manipulation text-left">
+                          <p className="text-[12px] font-semibold text-foreground line-clamp-2 leading-tight">{item.name}</p>
+                          <p className="text-[10px] text-primary font-medium mt-0.5">₹{Number(item.price)}</p>
+                          <p className="text-[9px] text-muted-foreground">{item.composition}</p>
+                          <p className="text-[9px] text-success">{Number(item.stock)} in stock</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {searchQuery && (
+                  <button
+                    onClick={() => logToShortageBook(searchQuery)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs font-medium hover:bg-accent/20 transition-colors touch-manipulation"
+                  >
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    Log "{searchQuery}" to Shortage Book
+                  </button>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-1.5">
@@ -904,23 +1057,32 @@ export default function POS() {
                     return s + ci.quantity;
                   }, 0);
                   const fullyInCart = inCartPacks >= Number(item.stock) - 0.0001 && Number(item.stock) > 0;
-                  const looseAvailable = !outOfStock && !fullyInCart && isPackUnit(item.unit) && item.weight_per_unit && item.weight_per_unit > 0;
                   const stockLabel = outOfStock ? "No Stock" : fullyInCart ? "All in Cart" : displayStock(item);
                   const stockColor = outOfStock || fullyInCart ? "text-destructive font-bold" : "text-muted-foreground";
                   const cardDisabled = outOfStock || fullyInCart;
 
                   return (
-                    <div key={item.id} className={`pos-grid-item text-left touch-manipulation p-2 ${cardDisabled ? "opacity-50" : ""}`}>
+                    <div key={item.id} className={`pos-grid-item text-left touch-manipulation p-2 relative ${cardDisabled ? "opacity-50" : ""}`}>
+                      {/* Schedule H badge */}
+                      {item.is_schedule_h && (
+                        <span className="absolute top-1 right-1 text-[8px] font-bold px-1 py-0.5 rounded bg-destructive/15 text-destructive border border-destructive/20 leading-none">Rx</span>
+                      )}
                       <button
                         onClick={() => { if (cardDisabled) { toast.error(outOfStock ? "No stock!" : "All stock already in cart!"); return; } addToCart(item); }}
                         className="w-full text-left"
                       >
-                        <p className="text-[13px] font-medium text-foreground line-clamp-2 leading-tight">{item.name}</p>
+                        <p className="text-[13px] font-medium text-foreground line-clamp-2 leading-tight pr-4">{item.name}</p>
                         <div className="flex items-center gap-1">
                           <span className="text-xs font-bold text-primary">₹{Number(item.price)}</span>
                           {Number(item.mrp) > Number(item.price) && <span className="text-[10px] text-muted-foreground line-through">₹{Number(item.mrp)}</span>}
                         </div>
                         <span className={`text-[10px] ${stockColor}`}>{stockLabel}</span>
+                        {/* Rack location badge (Feature 3) */}
+                        {item.rack_location && (
+                          <span className="flex items-center gap-0.5 text-[9px] text-muted-foreground mt-0.5">
+                            <MapPin className="h-2 w-2" />{item.rack_location}
+                          </span>
+                        )}
                       </button>
                       {isPackUnit(item.unit) && item.weight_per_unit && item.weight_per_unit > 0 && !outOfStock && (
                         <button
@@ -1082,7 +1244,7 @@ export default function POS() {
 
       {/* Payment Modal - properly bounded on all screen sizes */}
       {showPayment && (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowPayment(false)}>
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => { setShowPayment(false); stopRxCamera(); }}>
           <div
             className="glass-card rounded-t-2xl md:rounded-2xl p-4 w-full max-w-lg md:mx-4 animate-fade-in overflow-y-auto scrollbar-thin"
             style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top, 0px) - 8px)' }}
@@ -1090,7 +1252,7 @@ export default function POS() {
           >
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-foreground">Payment</h3>
-              <button onClick={() => setShowPayment(false)} className="p-1 rounded hover:bg-muted"><X className="h-4 w-4 text-muted-foreground" /></button>
+              <button onClick={() => { setShowPayment(false); stopRxCamera(); }} className="p-1 rounded hover:bg-muted"><X className="h-4 w-4 text-muted-foreground" /></button>
             </div>
             <p className="text-2xl font-bold text-gradient-primary text-center my-3">₹{roundedTotal}</p>
             {billDiscount > 0 && <div className="text-center text-xs text-success mb-2">Discount: ₹{billDiscount.toFixed(0)}</div>}
@@ -1137,8 +1299,63 @@ export default function POS() {
               </button>
             </div>
 
+            {/* ─── Prescription (Rx) Panel — Feature 4 ─────────────────── */}
+            {hasScheduleH && (
+              <div className="mb-3 p-3 rounded-xl bg-destructive/5 border border-destructive/25">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="h-4 w-4 text-destructive shrink-0" />
+                  <p className="text-xs font-semibold text-destructive">Schedule H Drug — Prescription Required</p>
+                </div>
+
+                {/* Doctor name */}
+                <input value={rxDoctorName} onChange={e => setRxDoctorName(e.target.value)}
+                  placeholder="Doctor's name"
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-muted border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-destructive/40 mb-2" />
+
+                {/* Camera / Upload */}
+                {!rxImageUrl && (
+                  <div className="flex gap-2">
+                    <button onClick={startRxCamera}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-muted border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors">
+                      <Camera className="h-3.5 w-3.5" /> Snap Rx
+                    </button>
+                    <button onClick={() => rxFileRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-muted border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors">
+                      <Upload className="h-3.5 w-3.5" /> Upload
+                    </button>
+                    <input ref={rxFileRef} type="file" accept="image/*" className="hidden"
+                      onChange={e => { if (e.target.files?.[0]) uploadRxFile(e.target.files[0]); }} />
+                  </div>
+                )}
+
+                {/* Webcam view */}
+                {rxCamActive && (
+                  <div className="mt-2 space-y-2">
+                    <video ref={rxVideoRef} className="w-full rounded-lg bg-black" playsInline muted />
+                    <canvas ref={rxCanvasRef} className="hidden" />
+                    <div className="flex gap-2">
+                      <button onClick={stopRxCamera} className="flex-1 py-1.5 rounded-lg bg-muted text-xs text-muted-foreground">Cancel</button>
+                      <button onClick={captureRxPhoto} className="flex-1 py-1.5 rounded-lg bg-destructive/10 text-destructive text-xs font-medium">📸 Capture</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Captured/uploaded preview */}
+                {rxImageUrl && (
+                  <div className="mt-2 relative">
+                    <img src={rxImageUrl} alt="Prescription" className="w-full rounded-lg object-cover max-h-32" />
+                    <button onClick={() => setRxImageUrl(null)}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-destructive text-white">
+                      <X className="h-3 w-3" />
+                    </button>
+                    <p className="text-[10px] text-success mt-1 flex items-center gap-1"><FileText className="h-2.5 w-2.5" /> Prescription captured</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2 safe-area-bottom">
-              <button onClick={() => setShowPayment(false)} className="py-2.5 rounded-lg text-sm font-medium bg-muted text-muted-foreground touch-manipulation">Cancel</button>
+              <button onClick={() => { setShowPayment(false); stopRxCamera(); }} className="py-2.5 rounded-lg text-sm font-medium bg-muted text-muted-foreground touch-manipulation">Cancel</button>
               <button onClick={completeSale} disabled={totalPaid < roundedTotal - 0.01 || isSaving} className="py-2.5 rounded-lg text-sm font-medium bg-success text-success-foreground hover:bg-success/90 disabled:opacity-40 touch-manipulation">
                 {isSaving ? "Saving..." : "Complete ₹" + roundedTotal}
               </button>
