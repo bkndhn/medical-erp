@@ -35,7 +35,8 @@ const emptyItem: Partial<Item> = {
 };
 
 export default function Inventory() {
-  const { tenantId } = useAuth();
+  const { tenantId, hasRole } = useAuth();
+  const isAdmin = hasRole("super_admin") || hasRole("admin");
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -114,7 +115,7 @@ export default function Inventory() {
       if (!(editItem as any).supplier_id) missing.push("Supplier");
       if (!editItem.price || editItem.price <= 0) missing.push("Price");
       if (!editItem.mrp || editItem.mrp <= 0) missing.push("MRP");
-      if (!editItem.cost_price || editItem.cost_price <= 0) missing.push("Cost Price");
+      if (isAdmin && (!editItem.cost_price || editItem.cost_price <= 0)) missing.push("Cost Price");
       if (!editItem.unit) missing.push("Unit/Packaging");
       if (!editItem.stock && editItem.stock !== 0) missing.push("Stock");
       if (!editItem.expiry_date) missing.push("Expiry Date");
@@ -301,16 +302,22 @@ export default function Inventory() {
   };
 
   const exportToExcel = () => {
-    const exportData = filtered.map(i => ({
-      Name: i.name, SKU: i.sku || "", Barcode: i.barcode || "",
-      Price: Number(i.price), MRP: Number(i.mrp), "Cost Price": Number(i.cost_price || 0),
-      Unit: i.unit || "pcs", "GST %": Number(i.gst_rate || 0), HSN: i.hsn_code || "",
-      Stock: Number(i.stock), "Min Stock": Number(i.low_stock_threshold || 10),
-      Batch: i.batch_number || "", "Expiry Date": i.expiry_date || "",
-      Composition: i.composition || "", Manufacturer: i.manufacturer || "",
-      "Units Per Pack": Number(i.weight_per_unit || 0),
-      Category: i.category_id && categoryMap[i.category_id] ? categoryMap[i.category_id].name : "",
-    }));
+    const exportData = filtered.map(i => {
+      const data: any = {
+        Name: i.name, SKU: i.sku || "", Barcode: i.barcode || "",
+        Price: Number(i.price), MRP: Number(i.mrp),
+      };
+      if (isAdmin) data["Cost Price"] = Number(i.cost_price || 0);
+      return {
+        ...data,
+        Unit: i.unit || "pcs", "GST %": Number(i.gst_rate || 0), HSN: i.hsn_code || "",
+        Stock: Number(i.stock), "Min Stock": Number(i.low_stock_threshold || 10),
+        Batch: i.batch_number || "", "Expiry Date": i.expiry_date || "",
+        Composition: i.composition || "", Manufacturer: i.manufacturer || "",
+        "Units Per Pack": Number(i.weight_per_unit || 0),
+        Category: i.category_id && categoryMap[i.category_id] ? categoryMap[i.category_id].name : "",
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Inventory");
     XLSX.writeFile(wb, `inventory_${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -529,7 +536,6 @@ export default function Inventory() {
                 ))}
               </tbody>
             </table>
-            </table>
           </div>
           </>
         )}
@@ -607,8 +613,10 @@ export default function Inventory() {
                 <input type="number" value={editItem.price || ""} onChange={e => setEditItem({ ...editItem, price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
               <div><label className="text-xs font-medium text-accent mb-1 block">MRP *</label>
                 <input type="number" value={editItem.mrp || ""} onChange={e => setEditItem({ ...editItem, mrp: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
-              <div><label className="text-xs font-medium text-accent mb-1 block">Cost Price *</label>
-                <input type="number" value={editItem.cost_price || ""} onChange={e => setEditItem({ ...editItem, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              {isAdmin && (
+                <div><label className="text-xs font-medium text-accent mb-1 block">Cost Price *</label>
+                  <input type="number" value={editItem.cost_price || ""} onChange={e => setEditItem({ ...editItem, cost_price: parseFloat(e.target.value) || 0 })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50" /></div>
+              )}
               <div><label className="text-xs font-medium text-accent mb-1 block">Unit / Packaging *</label>
                 <select value={editItem.unit || "strip"} onChange={e => setEditItem({ ...editItem, unit: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-accent/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/50">
                   {unitOptions.map(u => <option key={u} value={u}>{u}</option>)}

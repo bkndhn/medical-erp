@@ -3,9 +3,12 @@ import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximiz
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
+import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { toast } from "sonner";
 import { cacheItems, getCachedItems, cacheCategories, getCachedCategories, savePendingSale, getPendingSales, clearPendingSale } from "@/lib/indexedDB";
-import { printReceipt, getPrinterConfig } from "@/lib/printService";
+import { getPrinterConfig } from "@/lib/printService";
+import { useReactToPrint } from "react-to-print";
+import { Receipt } from "@/components/Receipt";
 
 interface Item {
   id: string; name: string; sku: string | null; barcode: string | null;
@@ -48,7 +51,8 @@ const MOBILE_SHORTCUTS = [
 ];
 
 export default function POS() {
-  const { tenantId, branchId, user } = useAuth();
+  const { tenantId, branchId, user, hasRole } = useAuth();
+  const isAdmin = hasRole("super_admin") || hasRole("admin");
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -90,6 +94,21 @@ export default function POS() {
 
   const [showMobileShortcuts, setShowMobileShortcuts] = useState(false);
 
+  const receiptRef = useRef<HTMLDivElement>(null);
+  const [lastSaleForPrint, setLastSaleForPrint] = useState<{sale: any, items: any[], customerInfo?: any} | null>(null);
+
+  const handleReactPrint = useReactToPrint({
+    contentRef: receiptRef,
+    documentTitle: "Receipt",
+    onAfterPrint: () => setLastSaleForPrint(null)
+  });
+
+  useEffect(() => {
+    if (lastSaleForPrint) {
+      setTimeout(() => handleReactPrint(), 100);
+    }
+  }, [lastSaleForPrint, handleReactPrint]);
+
   // Screen wake lock
   useEffect(() => {
     let wakeLock: any = null;
@@ -108,6 +127,34 @@ export default function POS() {
       wakeLock?.release?.();
     };
   }, []);
+
+  // Configure Global Barcode Scanner
+  useBarcodeScanner({
+    onScan: (barcode) => {
+      // Find item
+      const item = items.find(i => 
+        (i.barcode && i.barcode.toLowerCase() === barcode.toLowerCase()) || 
+        (i.sku && i.sku.toLowerCase() === barcode.toLowerCase())
+      );
+      
+      if (item && Number(item.stock) > 0) {
+        addToCart(item);
+        toast.success(`Scanned: ${item.name}`, { duration: 1000 });
+        // Optional: Trigger a tiny beep if browser allows
+        try {
+          const ctx = new window.AudioContext();
+          const osc = ctx.createOscillator();
+          osc.type = 'sine'; osc.frequency.setValueAtTime(800, ctx.currentTime);
+          osc.connect(ctx.destination);
+          osc.start(); osc.stop(ctx.currentTime + 0.1);
+        } catch (e) {}
+      } else if (item && Number(item.stock) <= 0) {
+        toast.error(`Out of stock: ${item.name}`);
+      } else {
+        toast.error(`Barcode not found: ${barcode}`);
+      }
+    }
+  });
 
   // Lock orientation to portrait — multi-strategy for cross-browser support
   useEffect(() => {
@@ -520,6 +567,7 @@ export default function POS() {
     const savedCart = [...cart];
     const savedBillNo = billNo;
     const savedCustomerPhone = customerPhone;
+    const savedCustomerName = customerName;
     const savedWhatsappShare = whatsappShare;
 
     // INSTANT: clear cart immediately
@@ -579,7 +627,7 @@ export default function POS() {
 
       const config = getPrinterConfig();
       if (config.enabled && config.autoPrint) {
-        printReceipt(sale, itemsWithSaleId);
+        setLastSaleForPrint({ sale, items: itemsWithSaleId, customerInfo: { name: savedCustomerName, phone: savedCustomerPhone } });
       }
 
       const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
@@ -725,7 +773,7 @@ export default function POS() {
       case "F6": holdBill(); break;
       case "F8": fetchPastBills(); setShowReprint(true); break;
       case "F9": cart.length > 0 && openPayment(); break;
-      case "F10": fetchPastBills(true, deleteDateFilter); setShowDeleteBill(true); break;
+      case "F10": if (isAdmin) { fetchPastBills(true, deleteDateFilter); setShowDeleteBill(true); } else { toast.error("Only admins can delete bills"); } break;
       case "F12": if (cart.length > 0 && !showPayment) openPayment(); else if (showPayment) completeSale(); break;
     }
     setShowMobileShortcuts(false);
@@ -744,7 +792,7 @@ export default function POS() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "F10") { e.preventDefault(); fetchPastBills(true, deleteDateFilter); setShowDeleteBill(true); }
+      if (e.key === "F10") { e.preventDefault(); if (isAdmin) { fetchPastBills(true, deleteDateFilter); setShowDeleteBill(true); } else { toast.error("Only admins can delete bills"); } }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -795,6 +843,14 @@ export default function POS() {
           <button onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})} className="p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"><Maximize className="h-4 w-4" /></button>
         </div>
       </header>
+
+      {/* Offline Status Bar */}
+      {!isOnline && (
+        <div className="bg-accent text-accent-foreground px-3 py-1.5 text-xs font-medium flex items-center justify-center gap-2 shrink-0 animate-fade-in z-40 relative">
+          <WifiOff className="h-3.5 w-3.5" />
+          You are currently offline. Working securely. Bills will auto-sync when connected.
+        </div>
+      )}
 
       {/* Mobile Quick Action Bar */}
       {showMobileShortcuts && (
@@ -883,9 +939,11 @@ export default function POS() {
           </div>
 
           <div className="hidden md:flex items-center gap-3 px-3 py-1.5 border-t border-border bg-card/30 text-[10px] text-muted-foreground shrink-0">
-            {[["F1","Search"],["F6","Hold"],["F8","Reprint"],["F9","Pay"],["F10","Delete"],["F12","Complete"],["?","Help"]].map(([k,l]) => (
+            {[["F1","Search"],["F6","Hold"],["F8","Reprint"], isAdmin ? ["F10","Delete"] : null, ["F9","Pay"], ["F12","Complete"],["?","Help"]].filter(Boolean).map((s) => {
+              const [k, l] = s as string[];
+              return (
               <span key={k} className="flex items-center gap-1 whitespace-nowrap"><kbd className="kbd-shortcut">{k}</kbd>{l}</span>
-            ))}
+            )})}
           </div>
         </div>
 
@@ -1258,6 +1316,15 @@ export default function POS() {
           </div>
         </div>
       )}
+
+      <div className="hidden">
+        <Receipt 
+          ref={receiptRef}
+          sale={lastSaleForPrint?.sale}
+          items={lastSaleForPrint?.items || []}
+          customerInfo={lastSaleForPrint?.customerInfo}
+        />
+      </div>
     </div>
   );
 }

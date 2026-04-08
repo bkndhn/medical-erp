@@ -21,6 +21,8 @@ import Branches from "./pages/Branches";
 import Devices from "./pages/Devices";
 import Payments from "./pages/Payments";
 import WhatsApp from "./pages/WhatsApp";
+import Transfers from "./pages/Transfers";
+import SupplierReturns from "./pages/SupplierReturns";
 import Settings from "./pages/Settings";
 import SuperAdmin from "./pages/SuperAdmin";
 import UserManagement from "./pages/UserManagement";
@@ -56,6 +58,8 @@ const App = () => (
               <Route path="/invoices" element={<Invoices />} />
               <Route path="/branches" element={<Branches />} />
               <Route path="/devices" element={<Devices />} />
+              <Route path="/transfers" element={<Transfers />} />
+              <Route path="/returns" element={<SupplierReturns />} />
               <Route path="/payments" element={<Payments />} />
               <Route path="/whatsapp" element={<WhatsApp />} />
               <Route path="/settings" element={<Settings />} />

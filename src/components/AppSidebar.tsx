@@ -18,6 +18,8 @@ const allNav = [
   { title: "Accounting", url: "/accounting", icon: Wallet, page: "accounting", section: "Modules" },
   { title: "Reports", url: "/reports", icon: BarChart3, page: "reports", section: "Modules" },
   { title: "Invoices", url: "/invoices", icon: FileText, page: "invoices", section: "Modules" },
+  { title: "Transfers", url: "/transfers", icon: Truck, page: "transfers", section: "Modules" },
+  { title: "Returns", url: "/returns", icon: FileText, page: "returns", section: "Modules" },
   { title: "Branches", url: "/branches", icon: Building2, page: "branches", section: "Admin" },
   { title: "Devices", url: "/devices", icon: Monitor, page: "devices", section: "Admin" },
   { title: "Payments", url: "/payments", icon: CreditCard, page: "payments", section: "Admin" },

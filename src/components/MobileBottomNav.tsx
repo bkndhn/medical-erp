@@ -19,6 +19,8 @@ const moreNav = [
   { title: "Suppliers", url: "/suppliers", icon: Users, page: "suppliers" },
   { title: "Accounting", url: "/accounting", icon: Wallet, page: "accounting" },
   { title: "Reports", url: "/reports", icon: BarChart3, page: "reports" },
+  { title: "Transfers", url: "/transfers", icon: Truck, page: "transfers" },
+  { title: "Returns", url: "/returns", icon: FileText, page: "returns" },
   { title: "Branches", url: "/branches", icon: Building2, page: "branches" },
   { title: "Devices", url: "/devices", icon: Monitor, page: "devices" },
   { title: "Payments", url: "/payments", icon: CreditCard, page: "payments" },
