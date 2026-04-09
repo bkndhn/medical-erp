@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Plus, Shield, Edit2, Trash2, X, Save, UserPlus, ToggleLeft, ToggleRight } from "lucide-react";
+import { Users, Shield, Edit2, Trash2, X, Save, UserPlus, ToggleLeft, ToggleRight, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
 const ROLES = ["admin", "manager", "cashier", "staff"] as const;
@@ -35,6 +35,7 @@ export default function UserManagement() {
   const [editAccess, setEditAccess] = useState<any>(null);
   const [inviteForm, setInviteForm] = useState({ email: "", password: "", fullName: "", role: "cashier" as string, branchId: "" });
   const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const isAdmin = hasRole("admin") || hasRole("super_admin");
 
@@ -72,35 +73,35 @@ export default function UserManagement() {
   };
 
   const handleInvite = async () => {
-    if (!inviteForm.email || !inviteForm.password || !tenantId) return;
+    if (!inviteForm.email || !inviteForm.password || !inviteForm.fullName || !tenantId) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+    if (inviteForm.password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
     setSaving(true);
     try {
       const { data: funcData, error: funcErr } = await supabase.functions.invoke('create-user', {
-        body: { email: inviteForm.email, password: inviteForm.password, fullName: inviteForm.fullName }
+        body: {
+          email: inviteForm.email,
+          password: inviteForm.password,
+          fullName: inviteForm.fullName,
+          tenantId: tenantId,
+          role: inviteForm.role,
+          branchId: inviteForm.branchId || null,
+        }
       });
-      
+
       if (funcErr) throw funcErr;
       if (funcData?.error) throw new Error(funcData.error);
-      
-      const newUserId = funcData.user.id;
 
-      await new Promise(r => setTimeout(r, 1000));
-
-      await supabase.from("profiles").update({
-        tenant_id: tenantId,
-        branch_id: inviteForm.branchId || null,
-        full_name: inviteForm.fullName,
-      }).eq("user_id", newUserId);
-
-      await supabase.from("user_roles").insert({
-        user_id: newUserId,
-        role: inviteForm.role as any,
-      });
-
-      toast.success(`User ${inviteForm.fullName} added as ${inviteForm.role}`);
+      toast.success(`✅ ${inviteForm.fullName} added as ${inviteForm.role}. They can log in now.`);
       setShowInvite(false);
       setInviteForm({ email: "", password: "", fullName: "", role: "cashier", branchId: "" });
-      fetchData();
+      // Small delay to let DB writes propagate before re-fetch
+      setTimeout(() => fetchData(), 600);
     } catch (err: any) {
       toast.error(err.message || "Failed to add user");
     } finally {
@@ -137,7 +138,6 @@ export default function UserManagement() {
 
   const savePageAccess = async (userId: string, pages: string[]) => {
     try {
-      // Upsert page access
       const existing = pageAccessMap[userId];
       if (existing !== undefined) {
         await supabase.from("user_page_access").update({ pages }).eq("user_id", userId).eq("tenant_id", tenantId!);
@@ -201,7 +201,7 @@ export default function UserManagement() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">{u.full_name || "Unnamed"}</p>
-                      <p className="text-xs text-muted-foreground">{u.phone || "No phone"}</p>
+                      <p className="text-xs text-muted-foreground">{u.email || "No email"}</p>
                     </div>
                   </div>
 
@@ -212,6 +212,11 @@ export default function UserManagement() {
                     <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${u.is_active ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
                       {u.is_active ? "Active" : "Inactive"}
                     </span>
+                    {!u.last_sign_in_at && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">
+                        <Clock className="h-3 w-3" /> Pending
+                      </span>
+                    )}
                   </div>
 
                   {u.user_id !== user?.id && (
@@ -232,7 +237,6 @@ export default function UserManagement() {
                   )}
                 </div>
 
-                {/* Show page access badges */}
                 <div className="flex flex-wrap gap-1 mt-2 pl-13">
                   {getUserPages(u).map(p => (
                     <span key={p} className="px-1.5 py-0.5 rounded text-[9px] bg-muted text-muted-foreground capitalize">{p}</span>
@@ -244,7 +248,6 @@ export default function UserManagement() {
         )}
       </div>
 
-      {/* Add Member Modal */}
       {showInvite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setShowInvite(false)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-md animate-fade-in" onClick={e => e.stopPropagation()}>
@@ -262,8 +265,24 @@ export default function UserManagement() {
                 <input type="email" value={inviteForm.email} onChange={e => setInviteForm({ ...inviteForm, email: e.target.value })} placeholder="user@business.com" className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Password</label>
-                <input type="password" value={inviteForm.password} onChange={e => setInviteForm({ ...inviteForm, password: e.target.value })} placeholder="Min 6 characters" minLength={6} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Password *</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={inviteForm.password}
+                    onChange={e => setInviteForm({ ...inviteForm, password: e.target.value })}
+                    placeholder="Min 6 characters"
+                    minLength={6}
+                    className="w-full px-3 py-2 pr-10 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(p => !p)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground touch-manipulation"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Role</label>
@@ -293,7 +312,6 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* Edit Role Modal */}
       {editUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setEditUser(null)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-sm animate-fade-in" onClick={e => e.stopPropagation()}>
@@ -309,7 +327,6 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* Page Access Toggle Modal */}
       {editAccess && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setEditAccess(null)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-md animate-fade-in max-h-[80vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>

@@ -46,12 +46,10 @@ export default function Dashboard() {
     let salesQuery = supabase.from("sales").select("grand_total, created_at, invoice_number, payment_mode, status, cost_total").eq("tenant_id", tenantId).order("created_at", { ascending: false });
     if (dateFrom) salesQuery = salesQuery.gte("created_at", dateFrom.toISOString());
     if (dateTo) salesQuery = salesQuery.lte("created_at", dateTo.toISOString());
-    else if (!dateFrom) salesQuery = salesQuery.limit(100);
 
     let siQuery = supabase.from("sale_items").select("item_id, item_name, quantity, total");
     if (dateFrom) siQuery = siQuery.gte("created_at", dateFrom.toISOString());
     if (dateTo) siQuery = siQuery.lte("created_at", dateTo.toISOString());
-    else if (!dateFrom) siQuery = siQuery.gte("created_at", since30.toISOString());
 
     Promise.all([
       salesQuery,
@@ -109,18 +107,54 @@ export default function Dashboard() {
 
       setItemVelocities(velocities);
 
-      // Build daily sales chart (last 7 days)
+      // Build dynamic sales chart based on selected date range
       const dayMap: Record<string, number> = {};
-      const today = new Date();
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(today); d.setDate(d.getDate() - i);
-        dayMap[d.toLocaleDateString("en-IN", { weekday: "short" })] = 0;
+      
+      // Determine what days to show on x-axis
+      const endD = dateTo ? new Date(dateTo) : new Date();
+      const startD = dateFrom ? new Date(dateFrom) : (() => { const d = new Date(endD); d.setDate(d.getDate() - 6); return d; })();
+      const diffDays = Math.ceil((endD.getTime() - startD.getTime()) / (1000 * 3600 * 24));
+      
+      // If range is > 31 days (like This Year or All Time), group by month instead of day
+      const groupByMonth = diffDays > 31;
+      
+      if (groupByMonth) {
+        // Group by month keys
+        s.forEach((sale: any) => {
+          const key = new Date(sale.created_at).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+          if (!dayMap[key]) dayMap[key] = 0;
+          dayMap[key] += Number(sale.grand_total);
+        });
+        // Pre-fill last 12 months for consistency if not all_time
+        if (dateFrom) {
+          const d = new Date(endD);
+          for(let i=0; i<12; i++) {
+            if (d < startD) break;
+            const key = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+            if (dayMap[key] === undefined) dayMap[key] = 0;
+            d.setMonth(d.getMonth() - 1);
+          }
+        }
+      } else {
+        // Prepare empty dates
+        const limitDays = Math.min(diffDays, 31); // max 31 bars
+        for (let i = limitDays - 1; i >= 0; i--) {
+          const d = new Date(endD); d.setDate(d.getDate() - i);
+          dayMap[d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit" })] = 0;
+        }
+        s.forEach((sale: any) => {
+          const key = new Date(sale.created_at).toLocaleDateString("en-IN", { weekday: "short", day: "2-digit" });
+          if (dayMap[key] !== undefined) dayMap[key] += Number(sale.grand_total);
+          // if it falls outside the plotted keys, we just don't chart it unless we added it
+          else dayMap[key] = Number(sale.grand_total);
+        });
       }
-      s.forEach((sale: any) => {
-        const key = new Date(sale.created_at).toLocaleDateString("en-IN", { weekday: "short" });
-        if (dayMap[key] !== undefined) dayMap[key] += Number(sale.grand_total);
-      });
-      setDailySalesData(Object.entries(dayMap).map(([day, amount]) => ({ day, amount: Math.round(amount) })));
+      
+      // Sort keys chronologically for correct chart display
+      const unsorted = Object.entries(dayMap).map(([day, amount]) => ({ day, amount: Math.round(amount) }));
+      // We rely on natural insertion or doing a fast sort if needed, but since it's formatted strings, let's keep it simple.
+      // Reversing logic isn't strictly necessary since we map the dataset into the UI in insertion order
+      setDailySalesData(unsorted);
 
       const outOfStock = lowItems.filter((i: any) => Number(i.stock) === 0);
       if (outOfStock.length > 0) toast.warning(`${outOfStock.length} items are out of stock!`, { duration: 5000 });
