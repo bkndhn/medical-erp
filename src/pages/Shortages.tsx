@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { ClipboardList, Plus, Search, Trash2, CheckCircle2, Clock, Truck, ShieldAlert } from "lucide-react";
+import { ClipboardList, Plus, Search, Trash2, CheckCircle2, Clock, Truck, ShieldAlert, FileDown, X, Factory } from "lucide-react";
 import { toast } from "sonner";
+import { exportToPDF } from "@/components/DateFilterExport";
 
 interface Shortage {
   id: string;
@@ -24,6 +25,9 @@ export default function ShortageBook() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"pending" | "ordered" | "fulfilled">("pending");
   const [showForm, setShowForm] = useState(false);
+  const [showPOModal, setShowPOModal] = useState(false);
+  const [items, setItems] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   
   const [formData, setFormData] = useState<Partial<Shortage>>({
@@ -44,14 +48,16 @@ export default function ShortageBook() {
 
   const loadShortages = async () => {
     try {
-      const { data, error } = await supabase
-        .from("shortage_book")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("created_at", { ascending: false });
+      const [{ data: sData, error }, { data: itData }, { data: supData }] = await Promise.all([
+        supabase.from("shortage_book").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+        supabase.from("items").select("*").eq("tenant_id", tenantId),
+        supabase.from("suppliers").select("*").eq("tenant_id", tenantId)
+      ]);
 
       if (error) throw error;
-      setShortages(data as Shortage[]);
+      setShortages(sData as Shortage[]);
+      setItems((itData as any) || []);
+      setSuppliers((supData as any) || []);
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -106,6 +112,45 @@ export default function ShortageBook() {
     (s.item_name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.customer_name && s.customer_name.toLowerCase().includes(searchQuery.toLowerCase())))
   );
 
+  const generatePO = (supplierId: string | null) => {
+    let supplierName = supplierId ? suppliers.find(s => s.id === supplierId)?.name || "Unknown Supplier" : "General / Multiple Suppliers";
+    
+    const poItems: any[] = [];
+    
+    items.forEach(item => {
+      if (supplierId && item.supplier_id !== supplierId) return;
+      if (Number(item.stock) <= (item.low_stock_threshold || 10)) {
+        poItems.push({ name: item.name, qty: Math.max(1, (item.low_stock_threshold || 10) * 2 - Number(item.stock)), priority: "Restock" });
+      }
+    });
+
+    shortages.filter(s => s.status === "pending").forEach(s => {
+       const matchingItem = items.find(i => i.name.toLowerCase() === s.item_name.toLowerCase());
+       if (supplierId && matchingItem && matchingItem.supplier_id !== supplierId) return;
+       // If tracking specific supplier, ignore random demands unless we want to map them (here we skip random ones).
+       if (supplierId && !matchingItem) return;
+       
+       // Deduplicate if already added via restructure
+       const existing = poItems.find(p => p.name === s.item_name);
+       if (existing) {
+         existing.qty = String(Number(existing.qty) + Number(s.requested_quantity || 1));
+       } else {
+         poItems.push({ name: s.item_name, qty: s.requested_quantity || "1", priority: s.priority });
+       }
+    });
+
+    if (poItems.length === 0) {
+      toast.error("No low-stock or pending demand items found for this selection.");
+      return;
+    }
+    
+    // Convert to PDF tabular data
+    const rows = poItems.map((p, i) => [String(i+1), p.name, String(p.qty), String(p.priority).toUpperCase(), ""]);
+    exportToPDF(`Purchase Order - ${supplierName}`, ["S.No", "Item Name", "Order Qty", "Priority", "Notes"], rows);
+    toast.success("Purchase Order generated!");
+    setShowPOModal(false);
+  };
+
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -115,10 +160,16 @@ export default function ShortageBook() {
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground">Track unavailable items and customer demands</p>
         </div>
-        <button onClick={() => { setFormData({ item_name: "", requested_quantity: "1", priority: "normal", status: "pending" }); setShowForm(true); }} 
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium whitespace-nowrap shadow-lg shadow-primary/20 touch-manipulation">
-          <Plus className="h-4 w-4" /> Log Demand
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowPOModal(true)} 
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-accent/15 text-accent rounded-lg border border-accent/20 hover:bg-accent/25 transition-all font-medium whitespace-nowrap touch-manipulation">
+            <FileDown className="h-4 w-4" /> Automate PO
+          </button>
+          <button onClick={() => { setFormData({ item_name: "", requested_quantity: "1", priority: "normal", status: "pending" }); setShowForm(true); }} 
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium whitespace-nowrap shadow-lg shadow-primary/20 touch-manipulation">
+            <Plus className="h-4 w-4" /> Log Demand
+          </button>
+        </div>
       </header>
 
       <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
@@ -244,6 +295,38 @@ export default function ShortageBook() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* PO Modal */}
+      {showPOModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setShowPOModal(false)}>
+          <div className="bg-card border border-border shadow-2xl rounded-2xl p-6 w-full max-w-md animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2"><FileDown className="h-5 w-5 text-accent"/> Generate Purchase Order</h3>
+              <button onClick={() => setShowPOModal(false)} className="p-1 rounded hover:bg-muted text-muted-foreground"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">Automatically generates a PDF combining Low-Stock items and pending Pending Demands.</p>
+            
+            <div className="space-y-3 max-h-64 overflow-y-auto pr-2 scrollbar-thin">
+              <button onClick={() => generatePO(null)} className="w-full flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30 hover:bg-muted/60 transition-colors text-left group">
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded bg-primary/10 text-primary flex items-center justify-center"><ClipboardList className="h-4 w-4" /></div>
+                  <div><p className="text-sm font-bold text-foreground">General Report (All Items)</p></div>
+                </div>
+                <FileDown className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+              
+              {suppliers.map(s => (
+                <button key={s.id} onClick={() => generatePO(s.id)} className="w-full flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30 hover:bg-muted/60 transition-colors text-left group">
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded bg-accent/10 text-accent flex items-center justify-center"><Factory className="h-4 w-4" /></div>
+                    <div><p className="text-sm font-bold text-foreground line-clamp-1">{s.name}</p></div>
+                  </div>
+                  <FileDown className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}

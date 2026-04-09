@@ -31,6 +31,7 @@ import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
 import Install from "./pages/Install";
 import Attendance from "./pages/Attendance";
+import CashRegister from "./pages/CashRegister";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,7 @@ const App = () => (
               <Route path="/transfers" element={<Transfers />} />
               <Route path="/shortages" element={<Shortages />} />
               <Route path="/returns" element={<SupplierReturns />} />
+              <Route path="/cash-register" element={<CashRegister />} />
               <Route path="/payments" element={<Payments />} />
               <Route path="/whatsapp" element={<WhatsApp />} />
               <Route path="/settings" element={<Settings />} />

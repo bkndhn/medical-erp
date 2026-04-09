@@ -11,6 +11,7 @@ import {
 const allNav = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard, page: "dashboard" },
   { title: "POS Billing", url: "/pos", icon: ShoppingCart, page: "pos", highlight: true },
+  { title: "Cash Register", url: "/cash-register", icon: Monitor, page: "cash-register", section: "Modules" },
   { title: "Inventory", url: "/inventory", icon: Package, page: "inventory", section: "Modules" },
   { title: "Shortages", url: "/shortages", icon: ClipboardList, page: "shortages", section: "Modules" },
   { title: "Purchases", url: "/purchases", icon: Truck, page: "purchases", section: "Modules" },

@@ -31,10 +31,10 @@ interface AuthContextType {
 }
 
 const PAGE_PERMISSIONS: Record<string, string[]> = {
-  super_admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "super-admin", "attendance", "transfers", "returns", "shortages"],
-  admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "attendance", "transfers", "returns", "shortages"],
-  manager: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "payments", "attendance", "transfers", "returns", "shortages"],
-  cashier: ["dashboard", "pos", "customers", "invoices", "attendance", "shortages"],
+  super_admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "super-admin", "attendance", "transfers", "returns", "shortages", "cash-register"],
+  admin: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "branches", "devices", "payments", "whatsapp", "settings", "users", "attendance", "transfers", "returns", "shortages", "cash-register"],
+  manager: ["dashboard", "pos", "inventory", "purchases", "customers", "suppliers", "accounting", "reports", "invoices", "payments", "attendance", "transfers", "returns", "shortages", "cash-register"],
+  cashier: ["dashboard", "pos", "customers", "invoices", "attendance", "shortages", "cash-register"],
   staff: ["dashboard", "inventory", "attendance"],
 };
 

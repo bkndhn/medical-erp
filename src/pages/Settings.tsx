@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store } from "lucide-react";
+import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift } from "lucide-react";
 import { toast } from "sonner";
 import { getPrinterConfig, savePrinterConfig, connectUSBPrinter, connectBluetoothPrinter, isUSBConnected, isBTConnected, type PrinterConfig } from "@/lib/printService";
 
@@ -50,7 +50,9 @@ export default function Settings() {
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer">("profile");
+  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer" | "loyalty">("profile");
+  const [tenantSettings, setTenantSettings] = useState<any>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [showPmForm, setShowPmForm] = useState(false);
   const [pmForm, setPmForm] = useState<Partial<PaymentMethod>>({ name: "", code: "", icon: "💳", is_active: true, sort_order: 0 });
@@ -78,6 +80,14 @@ export default function Settings() {
           const newBiz = { ...biz, storeName: data.name || "", gstNumber: data.gst_number || "", phone: data.phone || "", email: data.email || "", address: data.address || "" };
           setBiz(newBiz);
           saveBusinessDetails(newBiz);
+        }
+      });
+      supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId).single().then(({ data }) => {
+        if (data) setTenantSettings(data);
+        else {
+          supabase.from("tenant_settings").insert({ tenant_id: tenantId } as any).then(() => {
+            supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId).single().then(res => setTenantSettings(res.data));
+          });
         }
       });
       fetchPaymentMethods();
@@ -140,6 +150,19 @@ export default function Settings() {
     setPmSaving(false);
   };
 
+  const saveTenantSettings = async () => {
+    if (!tenantId || !tenantSettings) return;
+    setSettingsSaving(true);
+    const { error } = await supabase.from("tenant_settings").update({
+      loyalty_enabled: tenantSettings.loyalty_enabled,
+      points_per_rupee: tenantSettings.points_per_rupee,
+      rupees_per_point: tenantSettings.rupees_per_point
+    }).eq("tenant_id", tenantId);
+    if (error) toast.error(error.message);
+    else toast.success("Loyalty settings saved");
+    setSettingsSaving(false);
+  };
+
   const deletePm = async (id: string) => { if (!confirm("Delete?")) return; await supabase.from("payment_methods").delete().eq("id", id); toast.success("Deleted"); fetchPaymentMethods(); };
   const togglePm = async (pm: PaymentMethod) => { await supabase.from("payment_methods").update({ is_active: !pm.is_active }).eq("id", pm.id); fetchPaymentMethods(); };
 
@@ -172,6 +195,7 @@ export default function Settings() {
     { id: "profile" as const, label: "Profile", icon: User },
     { id: "business" as const, label: "Business", icon: Store },
     { id: "payments" as const, label: "Payments", icon: CreditCard },
+    { id: "loyalty" as const, label: "Loyalty", icon: Gift },
     { id: "printer" as const, label: "Printer", icon: Printer },
     { id: "appearance" as const, label: "Theme", icon: Palette },
   ];
@@ -394,6 +418,58 @@ export default function Settings() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "loyalty" && (
+          <div className="space-y-4">
+            <div className="glass-card rounded-xl p-5 space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Gift className="h-4 w-4 text-primary" /> Customer Loyalty Program</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Reward customers with points for every purchase. Points can be redeemed for discounts.</p>
+                </div>
+                <button onClick={() => setTenantSettings({ ...tenantSettings, loyalty_enabled: !tenantSettings?.loyalty_enabled })}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tenantSettings?.loyalty_enabled ? "bg-success/10 text-success border border-success/30" : "bg-muted text-muted-foreground border border-border"}`}>
+                  {tenantSettings?.loyalty_enabled ? "Program Active" : "Program Disabled"}
+                </button>
+              </div>
+
+              {tenantSettings && (
+                <div className={`space-y-4 transition-all duration-300 ${tenantSettings.loyalty_enabled ? "opacity-100" : "opacity-50 pointer-events-none"}`}>
+                  <div className="p-4 rounded-xl border border-border bg-muted/20">
+                    <h4 className="text-sm font-medium text-foreground mb-3">Earning Points</h4>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground">For every ₹</span>
+                      <input type="number" value={Math.round(1 / (tenantSettings.points_per_rupee || 0.01))} 
+                        onChange={e => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          setTenantSettings({ ...tenantSettings, points_per_rupee: +(1 / val).toFixed(4) });
+                        }}
+                        className="w-24 px-3 py-1.5 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-center" />
+                      <span className="text-sm text-muted-foreground">spent, customer earns</span>
+                      <span className="px-3 py-1.5 rounded-lg bg-primary/10 text-primary font-bold text-sm">1 point</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl border border-border bg-muted/20">
+                    <h4 className="text-sm font-medium text-foreground mb-3">Redeeming Points</h4>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-muted-foreground">Every</span>
+                      <span className="px-3 py-1.5 rounded-lg bg-accent/10 text-accent font-bold text-sm">1 point</span>
+                      <span className="text-sm text-muted-foreground">redeemed equals a discount of ₹</span>
+                      <input type="number" step="0.5" value={tenantSettings.rupees_per_point || 1} 
+                        onChange={e => setTenantSettings({ ...tenantSettings, rupees_per_point: parseFloat(e.target.value) || 1 })}
+                        className="w-24 px-3 py-1.5 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-center" />
+                    </div>
+                  </div>
+
+                  <button onClick={saveTenantSettings} disabled={settingsSaving} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+                    <Save className="h-4 w-4" /> {settingsSaving ? "Saving..." : "Save Loyalty Settings"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

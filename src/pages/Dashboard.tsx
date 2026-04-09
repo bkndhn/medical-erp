@@ -3,10 +3,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   TrendingUp, ShoppingCart, IndianRupee, AlertTriangle, Clock, Bell,
-  Package, X, Zap, Minus, TrendingDown, ChevronDown, ChevronUp, Info
+  Package, X, Zap, Minus, TrendingDown, ChevronDown, ChevronUp, Info, Calendar
 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { toast } from "sonner";
+import DateFilterExport from "@/components/DateFilterExport";
 
 interface LowStockItem {
   id: string; name: string; stock: number; low_stock_threshold: number;
@@ -33,6 +34,8 @@ export default function Dashboard() {
   const [dailySalesData, setDailySalesData] = useState<any[]>([]);
   const [activeVelocityFilter, setActiveVelocityFilter] = useState<"all" | "fast" | "medium" | "slow">("all");
   const [inventorySearch, setInventorySearch] = useState("");
+  const [dateFrom, setDateFrom] = useState<Date | null>(null);
+  const [dateTo, setDateTo] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -40,10 +43,20 @@ export default function Dashboard() {
 
     const since30 = new Date(); since30.setDate(since30.getDate() - VELOCITY_DAYS);
 
+    let salesQuery = supabase.from("sales").select("grand_total, created_at, invoice_number, payment_mode, status, cost_total").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+    if (dateFrom) salesQuery = salesQuery.gte("created_at", dateFrom.toISOString());
+    if (dateTo) salesQuery = salesQuery.lte("created_at", dateTo.toISOString());
+    else if (!dateFrom) salesQuery = salesQuery.limit(100);
+
+    let siQuery = supabase.from("sale_items").select("item_id, item_name, quantity, total");
+    if (dateFrom) siQuery = siQuery.gte("created_at", dateFrom.toISOString());
+    if (dateTo) siQuery = siQuery.lte("created_at", dateTo.toISOString());
+    else if (!dateFrom) siQuery = siQuery.gte("created_at", since30.toISOString());
+
     Promise.all([
-      supabase.from("sales").select("grand_total, created_at, invoice_number, payment_mode, status, cost_total").eq("tenant_id", tenantId).order("created_at", { ascending: false }).limit(100),
+      salesQuery,
       supabase.from("items").select("id, name, stock, low_stock_threshold, price, cost_price, unit").eq("tenant_id", tenantId).eq("is_active", true),
-      supabase.from("sale_items").select("item_id, item_name, quantity, total").gte("created_at", since30.toISOString()),
+      siQuery,
     ]).then(([{ data: sales }, { data: items }, { data: saleItems }]) => {
       const s = (sales as any) || [];
       const it = (items as any) || [];
@@ -126,7 +139,7 @@ export default function Dashboard() {
       }).subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [tenantId]);
+  }, [tenantId, dateFrom, dateTo]);
 
   const filteredVelocities = itemVelocities.filter(v =>
     activeVelocityFilter === "all" || v.velocity === activeVelocityFilter
@@ -156,21 +169,25 @@ export default function Dashboard() {
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row items-baseline md:items-center justify-between gap-4">
           <div className="ml-10 md:ml-0">
             <h1 className="text-lg sm:text-2xl font-bold text-foreground">Dashboard</h1>
             <p className="text-xs sm:text-sm text-muted-foreground">Welcome, {profile?.full_name || "User"} • {new Date().toLocaleDateString("en-IN")}</p>
           </div>
-          <div className="flex items-center gap-2">
-            {stats.lowStock > 0 && (
-              <button onClick={() => setShowAlerts(true)} className="relative p-2 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all touch-manipulation">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent text-accent-foreground text-[10px] font-bold flex items-center justify-center animate-pulse">{stats.lowStock}</span>
-              </button>
-            )}
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Online
-            </span>
+          <div className="flex items-center gap-4 flex-wrap">
+            <DateFilterExport onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }} defaultPreset="today" />
+            
+            <div className="flex items-center gap-2">
+              {stats.lowStock > 0 && (
+                <button onClick={() => setShowAlerts(true)} className="relative p-2 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all touch-manipulation">
+                  <Bell className="h-5 w-5" />
+                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent text-accent-foreground text-[10px] font-bold flex items-center justify-center animate-pulse">{stats.lowStock}</span>
+                </button>
+              )}
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Online
+              </span>
+            </div>
           </div>
         </div>
       </header>
@@ -221,7 +238,7 @@ export default function Dashboard() {
               <div>
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                   <Zap className="h-4 w-4 text-accent" /> Item Movement Tracker
-                  <span className="text-[10px] font-normal text-muted-foreground">Last {VELOCITY_DAYS} days</span>
+                  <span className="text-[10px] font-normal text-muted-foreground">{dateFrom ? "Selected Period" : `Last ${VELOCITY_DAYS} days`}</span>
                 </h3>
                 <p className="text-[11px] text-muted-foreground mt-0.5">Track which items to reorder — Fast = buy more, Slow = reduce purchase</p>
               </div>

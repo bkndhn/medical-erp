@@ -1,7 +1,8 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone, Undo2, Calendar, ClipboardList, MapPin, Camera, Upload, AlertCircle, FileText } from "lucide-react";
+import { Search, Plus, Minus, Trash2, CreditCard, Keyboard, Pause, Play, Maximize, X, ShoppingCart, Pill, Percent, IndianRupee, RotateCcw, Printer, ScanBarcode, Wifi, WifiOff, User, MessageSquare, Phone, Undo2, Calendar, ClipboardList, MapPin, Camera, Upload, AlertCircle, FileText, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { Link } from "react-router-dom";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { toast } from "sonner";
@@ -94,6 +95,11 @@ export default function POS() {
   const [whatsappShare, setWhatsappShare] = useState(() => localStorage.getItem("pos_whatsapp_share") === "true");
 
   const [showMobileShortcuts, setShowMobileShortcuts] = useState(false);
+
+  // Shift & Loyalty
+  const [activeShift, setActiveShift] = useState<any>(null);
+  const [checkingShift, setCheckingShift] = useState(true);
+  const [tenantSettings, setTenantSettings] = useState<any>(null);
 
   // Rx Prescription state
   const [rxDoctorName, setRxDoctorName] = useState("");
@@ -239,14 +245,19 @@ export default function POS() {
     if (!tenantId) return;
     const loadData = async () => {
       try {
-        const [{ data: it }, { data: cat }, { count }, { data: pm }] = await Promise.all([
+        const [{ data: it }, { data: cat }, { count }, { data: pm }, { data: shift }, { data: settings }] = await Promise.all([
           supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name"),
           supabase.from("categories").select("*").eq("tenant_id", tenantId).order("sort_order"),
           supabase.from("sales").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId),
           supabase.from("payment_methods").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("sort_order"),
+          supabase.from("shifts").select("*").eq("tenant_id", tenantId).eq("user_id", user?.id).eq("status", "open").maybeSingle(),
+          supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId).maybeSingle()
         ]);
         const itemsData = (it as unknown as Item[]) || [];
         const catsData = (cat as any) || [];
+        setActiveShift(shift || null);
+        setTenantSettings(settings || null);
+        setCheckingShift(false);
         setItems(itemsData);
         setCategories(catsData);
         setBillCount((count || 0) + 1);
@@ -275,12 +286,14 @@ export default function POS() {
         if (cached.length > 0) {
           setItems(cached as Item[]);
           setCategories(cachedCats);
+          setActiveShift({ status: "open", offline: true }); // permit billing if offline
+          setCheckingShift(false);
           toast.info("Loaded cached items (offline mode)");
         }
       }
     };
     loadData();
-  }, [tenantId]);
+  }, [tenantId, user]);
 
   const billNo = `INV-${String(billCount).padStart(4, "0")}`;
 
@@ -708,12 +721,36 @@ export default function POS() {
       const itemsWithSaleId = saleItemsData.map(i => ({ ...i, sale_id: sale.id }));
       await supabase.from("sale_items").insert(itemsWithSaleId as any);
 
-      // Stock deduction
+      // FIFO Stock deduction — deduct from earliest-expiry batch first
       for (const ci of savedCart) {
-        const stockReduction = ci.isLoose && ci.item.weight_per_unit && ci.item.weight_per_unit > 0
+        let remaining = ci.isLoose && ci.item.weight_per_unit && ci.item.weight_per_unit > 0
           ? ci.quantity / ci.item.weight_per_unit : ci.quantity;
-        const newStock = Math.max(0, Number(ci.item.stock) - stockReduction);
-        await supabase.from("items").update({ stock: parseFloat(newStock.toFixed(4)) } as any).eq("id", ci.item.id);
+
+        // Fetch all batches of same item name, sorted by expiry (earliest first, nulls last)
+        const { data: batches } = await supabase
+          .from("items")
+          .select("id, stock, expiry_date, batch_number")
+          .eq("tenant_id", tenantId)
+          .eq("name", ci.item.name)
+          .eq("is_active", true)
+          .order("expiry_date", { ascending: true, nullsFirst: false });
+
+        if (batches && batches.length > 1) {
+          // FIFO cascade across batches
+          for (const batch of batches) {
+            if (remaining <= 0.0001) break;
+            const batchStock = Number(batch.stock);
+            if (batchStock <= 0) continue;
+            const deduct = Math.min(remaining, batchStock);
+            const newStock = Math.max(0, batchStock - deduct);
+            await supabase.from("items").update({ stock: parseFloat(newStock.toFixed(4)) } as any).eq("id", batch.id);
+            remaining -= deduct;
+          }
+        } else {
+          // Single batch fallback (original logic)
+          const newStock = Math.max(0, Number(ci.item.stock) - remaining);
+          await supabase.from("items").update({ stock: parseFloat(newStock.toFixed(4)) } as any).eq("id", ci.item.id);
+        }
       }
 
       // Payment records
@@ -935,6 +972,25 @@ export default function POS() {
       toast.error("Failed to log shortage: " + err.message);
     }
   };
+
+  if (!checkingShift && !activeShift) {
+    return (
+      <div className="h-screen py-16 flex items-start justify-center bg-background/50 p-4">
+        <div className="glass-card max-w-md w-full p-8 rounded-3xl text-center space-y-6 animate-in slide-in-from-bottom-4 duration-500 mt-20">
+          <div className="h-20 w-20 bg-muted mx-auto rounded-full flex items-center justify-center">
+             <AlertTriangle className="h-10 w-10 text-muted-foreground" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground mb-2">Shift Closed</h2>
+            <p className="text-muted-foreground">You must open a shift to start billing and accept payments.</p>
+          </div>
+          <Link to="/cash-register" className="inline-block w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-all text-lg shadow-lg">
+            Open Cash Register
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">

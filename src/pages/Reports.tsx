@@ -10,7 +10,7 @@ import { printReceipt, generateWhatsAppText } from "@/lib/printService";
 import * as XLSX from "xlsx";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
-const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices", "suppliers"] as const;
+const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices", "suppliers", "schedule_h"] as const;
 type Tab = typeof TABS[number];
 
 export default function Reports() {
@@ -200,6 +200,26 @@ export default function Reports() {
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [filteredPurchases, supplierMap]);
 
+  const scheduleHReport = useMemo(() => {
+    const report: any[] = [];
+    filteredSales.filter(s => s.rx_required && s.status === "completed").forEach(sale => {
+      const itemsInSale = filteredSaleItems.filter(si => si.sale_id === sale.id);
+      itemsInSale.forEach(si => {
+        const item = items.find(i => i.id === si.item_id);
+        if (item?.is_schedule_h) {
+          report.push({
+            date: new Date(sale.created_at).toLocaleDateString(),
+            patient: (sale.notes || "").replace("Customer:", "").split("(")[0].trim() || "Walk-in",
+            doctor: sale.doctor_name || "Self",
+            drug: si.item_name,
+            qty: si.quantity
+          });
+        }
+      });
+    });
+    return report.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }, [filteredSales, filteredSaleItems, items]);
+
   // --- External Exports (Feature 5) ---
   const exportGSTR1Json = () => {
     const bizDetailStr = localStorage.getItem("business_details");
@@ -347,6 +367,7 @@ export default function Reports() {
     else if (tab === "devices") exportToExcel(deviceWiseSales.map(d => ({ Device: d.name, Orders: d.count, Total: d.total.toFixed(2), "Avg Bill": d.avgBill.toFixed(2) })), "device-sales");
     else if (tab === "payments") exportToExcel(paymentWiseReport.map(p => ({ Mode: p.mode.toUpperCase(), Transactions: p.count, Total: p.total.toFixed(2), "Avg Bill": p.avgBill.toFixed(2) })), "payment-report");
     else if (tab === "pnl") exportToExcel([{ "Net Sales": netSales.toFixed(2), "Cost of Goods": costOfGoods.toFixed(2), "Gross Profit": grossProfit.toFixed(2), Expenses: totalExpenses.toFixed(2), "Net Profit": netProfit.toFixed(2), Purchases: totalPurchases.toFixed(2), Refunds: totalRefunds.toFixed(2) }], "pnl-report");
+    else if (tab === "schedule_h") exportToExcel(scheduleHReport.map(r => ({ Date: r.date, "Patient Name": r.patient, "Doctor Name": r.doctor, Medicine: r.drug, Qty: r.qty })), "schedule-h-register");
     else exportToExcel(filteredSales.map(s => ({ Invoice: s.invoice_number, Date: new Date(s.created_at).toLocaleDateString(), Payment: s.payment_mode, Amount: Number(s.grand_total).toFixed(2) })), "overview-report");
   };
 
@@ -356,11 +377,12 @@ export default function Reports() {
     else if (tab === "expiry") exportToPDF("Expiry Report", ["Name", "Batch", "Stock", "MRP", "Value", "Expiry", "Days"], expiryItems.map(i => [i.name, i.batch_number || "—", String(Number(i.stock)), `₹${Number(i.mrp).toFixed(0)}`, `₹${i.stockValue.toFixed(0)}`, i.expiry_date, i.expired ? "EXPIRED" : `${i.daysLeft}d`]));
     else if (tab === "payments") exportToPDF("Payment Report", ["Mode", "Transactions", "Total", "Avg Bill"], paymentWiseReport.map(p => [p.mode.toUpperCase(), String(p.count), `₹${p.total.toFixed(0)}`, `₹${p.avgBill.toFixed(0)}`]));
     else if (tab === "devices") exportToPDF("Device Sales", ["Device", "Orders", "Revenue", "Avg Bill"], deviceWiseSales.map(d => [d.name, String(d.count), `₹${d.total.toFixed(0)}`, `₹${d.avgBill.toFixed(0)}`]));
+    else if (tab === "schedule_h") exportToPDF("Schedule H Register", ["Date", "Patient Name", "Doctor's Name", "Medicine", "Qty"], scheduleHReport.map(r => [r.date, r.patient, r.doctor, r.drug, String(r.qty)]));
     else exportToPDF("Sales Report", ["Invoice", "Date", "Payment", "Amount"], filteredSales.map(s => [s.invoice_number, new Date(s.created_at).toLocaleDateString(), s.payment_mode, `₹${Number(s.grand_total).toFixed(0)}`]));
   };
 
   const tooltipStyle = { backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' };
-  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️", suppliers: "🏭" };
+  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️", suppliers: "🏭", schedule_h: "⚕️" };
 
   const searchedBills = useMemo(() => {
     if (!searchQuery) return filteredSales;
@@ -757,29 +779,29 @@ export default function Reports() {
             <div className="glass-card rounded-xl p-5">
               <h3 className="text-sm font-semibold text-foreground mb-4"><Calendar className="h-4 w-4 text-accent inline mr-2" />Expiry Tracker</h3>
               <div className="overflow-x-auto -mx-5 px-5">
-                <table className="w-full text-sm min-w-[900px]">
+                <table className="w-full text-sm min-w-[950px]">
                   <thead><tr className="border-b border-border">
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[18%]">Item</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[8%]">Batch</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[12%]">Manufacturer</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[10%]">Supplier</th>
-                    <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">Stock</th>
-                    <th className="text-right py-2 text-xs text-muted-foreground w-[8%]">MRP</th>
-                    <th className="text-right py-2 text-xs text-muted-foreground w-[10%]">Value</th>
-                    <th className="text-left py-2 text-xs text-muted-foreground w-[12%]">Expiry Date</th>
-                    <th className="text-right py-2 text-xs text-muted-foreground w-[10%]">Days Left</th>
+                    <th className="text-left py-2 px-3 text-xs text-muted-foreground w-[18%]">Item</th>
+                    <th className="text-left py-2 px-3 text-xs text-muted-foreground w-[8%]">Batch</th>
+                    <th className="text-left py-2 px-3 text-xs text-muted-foreground w-[12%]">Manufacturer</th>
+                    <th className="text-left py-2 px-3 text-xs text-muted-foreground w-[10%]">Supplier</th>
+                    <th className="text-right py-2 px-3 text-xs text-muted-foreground w-[8%]">Stock</th>
+                    <th className="text-right py-2 px-3 text-xs text-muted-foreground w-[8%]">MRP</th>
+                    <th className="text-right py-2 px-3 text-xs text-muted-foreground w-[10%] border-r border-border/10">Stock Value</th>
+                    <th className="text-right py-2 px-3 text-xs text-muted-foreground w-[12%]">Expiry Date</th>
+                    <th className="text-right py-2 px-3 text-xs text-muted-foreground w-[10%]">Days Left</th>
                   </tr></thead>
                   <tbody>{expiryItems.filter(i => searchFilter(i.name)).map((item, i) => (
                     <tr key={i} className={`border-b border-border/30 ${item.expired ? "bg-destructive/5" : item.daysLeft <= 30 ? "bg-accent/5" : ""}`}>
-                      <td className="py-2 text-foreground text-xs">{item.name}</td>
-                      <td className="py-2 text-muted-foreground font-mono text-xs">{item.batch_number || "—"}</td>
-                      <td className="py-2 text-muted-foreground text-xs">{item.manufacturer || "—"}</td>
-                      <td className="py-2 text-muted-foreground text-xs">{item.supplier_id ? (suppliers.find((s: any) => s.id === item.supplier_id)?.name || "—") : "—"}</td>
-                      <td className="py-2 text-right text-foreground font-medium text-xs">{Number(item.stock)}</td>
-                      <td className="py-2 text-right text-muted-foreground text-xs">₹{Number(item.mrp).toFixed(0)}</td>
-                      <td className="py-2 text-right text-foreground font-medium text-xs">₹{item.stockValue.toFixed(0)}</td>
-                      <td className="py-2 text-xs text-muted-foreground">{item.expiry_date}</td>
-                      <td className="py-2 text-right"><span className={`font-semibold text-xs ${item.expired ? "text-destructive" : item.daysLeft <= 30 ? "text-accent" : item.daysLeft <= 90 ? "text-foreground" : "text-success"}`}>{item.expired ? "EXPIRED" : `${item.daysLeft}d`}</span></td>
+                      <td className="py-2 px-3 text-foreground text-xs">{item.name}</td>
+                      <td className="py-2 px-3 text-muted-foreground font-mono text-xs">{item.batch_number || "—"}</td>
+                      <td className="py-2 px-3 text-muted-foreground text-xs">{item.manufacturer || "—"}</td>
+                      <td className="py-2 px-3 text-muted-foreground text-xs">{item.supplier_id ? (suppliers.find((s: any) => s.id === item.supplier_id)?.name || "—") : "—"}</td>
+                      <td className="py-2 px-3 text-right text-foreground font-medium text-xs">{Number(item.stock)}</td>
+                      <td className="py-2 px-3 text-right text-muted-foreground text-xs">₹{Number(item.mrp).toFixed(0)}</td>
+                      <td className="py-2 px-3 text-right text-foreground font-medium text-xs border-r border-border/10">₹{item.stockValue.toFixed(0)}</td>
+                      <td className="py-2 px-3 text-right font-mono text-xs text-muted-foreground">{item.expiry_date}</td>
+                      <td className="py-2 px-3 text-right"><span className={`font-semibold text-xs ${item.expired ? "text-destructive" : item.daysLeft <= 30 ? "text-accent" : item.daysLeft <= 90 ? "text-foreground" : "text-success"}`}>{item.expired ? "EXPIRED" : `${item.daysLeft}d`}</span></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -899,6 +921,42 @@ export default function Reports() {
               {filteredPurchases.length === 0 && <p className="text-muted-foreground text-center py-8">No purchases</p>}
             </div>
           </>}
+
+          {/* Schedule H Register */}
+          {tab === "schedule_h" && <>
+            <div className="glass-card rounded-xl border border-border mt-4 overflow-hidden">
+              <div className="p-4 border-b border-border bg-muted/20">
+                <h3 className="text-base font-bold text-foreground">Schedule H1 Register (Form 21)</h3>
+                <p className="text-xs text-muted-foreground">Log of dispensed Schedule H drugs. Required for drug inspector audits.</p>
+              </div>
+              <div className="overflow-x-auto w-full">
+                <table className="w-full text-left text-sm whitespace-nowrap min-w-[700px]">
+                  <thead>
+                    <tr className="bg-muted/50 border-b border-border">
+                      <th className="px-4 py-3 font-semibold text-muted-foreground w-32">Date</th>
+                      <th className="px-4 py-3 font-semibold text-muted-foreground">Patient Name</th>
+                      <th className="px-4 py-3 font-semibold text-muted-foreground">Doctor's Name</th>
+                      <th className="px-4 py-3 font-semibold text-muted-foreground">Medicine (Drug Name)</th>
+                      <th className="px-4 py-3 font-semibold text-muted-foreground w-20">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {scheduleHReport.map((r, i) => (
+                      <tr key={i} className="hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3 text-muted-foreground">{r.date}</td>
+                        <td className="px-4 py-3 text-foreground font-medium">{r.patient}</td>
+                        <td className="px-4 py-3 text-foreground">{r.doctor}</td>
+                        <td className="px-4 py-3 text-primary font-medium">{r.drug}</td>
+                        <td className="px-4 py-3 text-foreground font-mono">{r.qty}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {scheduleHReport.length === 0 && <p className="text-center text-muted-foreground py-12">No Schedule H drugs dispensed in this period</p>}
+            </div>
+          </>}
+
         </>}
       </div>
 
