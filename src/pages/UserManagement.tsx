@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Shield, Edit2, Trash2, X, Save, UserPlus, ToggleLeft, ToggleRight, Eye, EyeOff } from "lucide-react";
+import { Users, Shield, Edit2, Trash2, X, Save, UserPlus, ToggleLeft, ToggleRight, Eye, EyeOff, Clock, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 const ROLES = ["admin", "manager", "cashier", "staff"] as const;
