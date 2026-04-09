@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Profile {
   id: string;
@@ -125,6 +126,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Realtime listener for forced logouts
+  useEffect(() => {
+    if (!user || !profile) return;
+
+    const channel = supabase.channel(`auth_status_${user.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${user.id}` }, (payload) => {
+        if (payload.new.is_active === false) {
+          toast.error("Your account has been deactivated by the admin.");
+          signOut();
+          window.location.href = "/auth";
+        }
+      });
+
+    if (profile.tenant_id) {
+      channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tenants', filter: `id=eq.${profile.tenant_id}` }, (payload) => {
+        if (payload.new.is_active === false) {
+          toast.error("Your business account has been paused by the Super Admin.");
+          signOut();
+          window.location.href = "/auth";
+        }
+      });
+    }
+
+    channel.subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user, profile]);
 
   const signUp = async (email: string, password: string, fullName: string) => {
     const { error } = await supabase.auth.signUp({

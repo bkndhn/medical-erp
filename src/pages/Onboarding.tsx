@@ -26,10 +26,10 @@ export default function Onboarding() {
     if (!user) return;
     setLoading(true);
     try {
-      // Create tenant
+      // Create tenant (paused by default)
       const { data: tenant, error: tErr } = await supabase
         .from("tenants")
-        .insert({ name: businessName, industry: industry as any, owner_id: user.id })
+        .insert({ name: businessName, industry: industry as any, owner_id: user.id, is_active: false })
         .select()
         .single();
       if (tErr) throw tErr;
@@ -59,9 +59,12 @@ export default function Onboarding() {
         .update({ branch_id: branch.id })
         .eq("user_id", user.id);
 
-      await refreshProfile();
-      toast.success("Business created successfully!");
-      navigate("/");
+      toast.success("Business created! Pending Super Admin approval.", { duration: 5000 });
+      // The AuthContext fetchProfile will automatically log them out because tenant is inactive,
+      // but let's be explicit here to avoid any race conditions.
+      await new Promise(r => setTimeout(r, 2000));
+      await supabase.auth.signOut();
+      window.location.href = "/auth";
     } catch (err: any) {
       toast.error(err.message || "Setup failed");
     } finally {

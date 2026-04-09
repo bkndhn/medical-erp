@@ -13,7 +13,7 @@ const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(
 interface Tenant {
   id: string; name: string; industry: string; subscription: string;
   is_active: boolean; owner_id: string | null; created_at: string;
-  max_users: number; max_branches: number; max_sessions: number; max_devices: number;
+  max_users: number; max_branches: number; max_sessions: number; max_devices: number; max_items: number;
   email: string | null; phone: string | null; gst_number: string | null; address: string | null;
 }
 
@@ -23,6 +23,8 @@ export default function SuperAdmin() {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
+  const [masterAdminEmail, setMasterAdminEmail] = useState("");
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [tab, setTab] = useState<"businesses" | "analytics" | "sessions" | "settings">("businesses");
@@ -35,16 +37,18 @@ export default function SuperAdmin() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [{ data: t }, { data: p }, { data: s }, { data: sess }] = await Promise.all([
+    const [{ data: t }, { data: p }, { data: s }, { data: sess }, { data: settings }] = await Promise.all([
       supabase.from("tenants").select("*").order("created_at", { ascending: false }),
       supabase.from("profiles").select("user_id, full_name, tenant_id, is_active, phone"),
       supabase.from("sales").select("tenant_id, grand_total, created_at").limit(1000),
       supabase.from("active_sessions").select("*").order("last_active_at", { ascending: false }),
+      supabase.from("system_settings").select("*").eq("key", "master_admin_email").single()
     ]);
     setTenants((t as Tenant[]) || []);
     setProfiles(p || []);
     setSales(s || []);
     setSessions(sess || []);
+    if (settings) setMasterAdminEmail(settings.value);
     setLoading(false);
   };
 
@@ -97,6 +101,10 @@ export default function SuperAdmin() {
   };
 
   const deleteTenant = async (tenantId: string) => {
+    if (confirmAction?.type === "delete" && deleteConfirmText !== "delete permanantly") {
+      toast.error('Please type "delete permanantly" to confirm.');
+      return;
+    }
     try {
       const tenantProfiles = profiles.filter(p => p.tenant_id === tenantId);
       const userIds = tenantProfiles.map(p => p.user_id);
@@ -110,10 +118,21 @@ export default function SuperAdmin() {
       }
       await supabase.from("tenants").delete().eq("id", tenantId);
       toast.success("Business deleted permanently");
-      setConfirmAction(null); fetchData();
+      setConfirmAction(null); 
+      setDeleteConfirmText("");
+      fetchData();
     } catch (err: any) {
       toast.error(err.message || "Delete failed");
     }
+  };
+
+  const saveMasterAdminEmail = async () => {
+    if (!masterAdminEmail) return;
+    setSavingSettings(true);
+    const { error } = await supabase.from("system_settings").upsert({ key: "master_admin_email", value: masterAdminEmail }, { onConflict: "key" });
+    if (error) toast.error(error.message);
+    else toast.success("Master admin email updated");
+    setSavingSettings(false);
   };
 
   const saveSettings = async () => {
@@ -124,6 +143,7 @@ export default function SuperAdmin() {
       max_users: editingTenant.max_users,
       max_branches: editingTenant.max_branches,
       max_devices: editingTenant.max_devices,
+      max_items: editingTenant.max_items,
       subscription: editingTenant.subscription as any,
     }).eq("id", editingTenant.id);
     if (error) toast.error(error.message);
@@ -232,10 +252,17 @@ export default function SuperAdmin() {
           {/* Settings Tab */}
           {tab === "settings" && (
             <div className="max-w-3xl mx-auto space-y-4">
-              <div className="glass-card rounded-xl p-4 border-l-4 border-primary/50 mb-4">
-                <p className="text-sm font-medium text-foreground mb-1">💡 How to assign Super Admin?</p>
-                <p className="text-xs text-muted-foreground">Go to Supabase Dashboard → Table Editor → <code className="text-primary">user_roles</code> → Insert a row with the user's <code className="text-primary">user_id</code> and role = <code className="text-primary">super_admin</code>.</p>
+              <div className="glass-card rounded-xl p-5 mb-4">
+                <h2 className="text-lg font-bold text-foreground flex items-center gap-2 mb-3"><Shield className="h-5 w-5 text-primary" /> Master Super Admin</h2>
+                <p className="text-xs text-muted-foreground mb-3">This email automatically receives super_admin status upon signup. Secondary admins can still be managed in Supabase table editor.</p>
+                <div className="flex gap-2">
+                  <input type="email" value={masterAdminEmail} onChange={e => setMasterAdminEmail(e.target.value)} placeholder="admin@domain.com" className="flex-1 px-4 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  <button onClick={saveMasterAdminEmail} disabled={savingSettings} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 touch-manipulation flex items-center gap-2">
+                    <Save className="h-4 w-4" /> Save
+                  </button>
+                </div>
               </div>
+              
               <h2 className="text-lg font-bold text-foreground flex items-center gap-2"><Settings className="h-5 w-5 text-primary" /> Tenant Limits & Plans</h2>
               <div className="space-y-3">
                 {tenants.map(t => {
@@ -260,6 +287,7 @@ export default function SuperAdmin() {
                           { label: "Users", key: "max_users" as const },
                           { label: "Branches", key: "max_branches" as const },
                           { label: "Devices", key: "max_devices" as const },
+                          { label: "Items", key: "max_items" as const },
                         ].map(({ label, key }) => (
                           <div key={key} className="flex flex-col gap-1">
                             <label className="text-[10px] text-muted-foreground">{label}</label>
@@ -436,18 +464,32 @@ export default function SuperAdmin() {
 
       {/* Confirm Modal */}
       {confirmAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setConfirmAction(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => { setConfirmAction(null); setDeleteConfirmText(""); }}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-sm animate-fade-in" onClick={e => e.stopPropagation()}>
             <AlertTriangle className={`h-10 w-10 mx-auto mb-3 ${confirmAction.type === "delete" ? "text-destructive" : "text-accent"}`} />
             <h3 className="text-lg font-bold text-foreground text-center mb-1">
               {confirmAction.type === "delete" ? "Delete" : confirmAction.type === "pause" ? "Pause" : "Activate"} Business?
             </h3>
             <p className="text-sm text-muted-foreground text-center mb-4">{confirmAction.tenantName}</p>
-            {confirmAction.type === "delete" && <p className="text-xs text-destructive text-center mb-4">This will permanently delete all data including users, items, sales, and configurations.</p>}
+            {confirmAction.type === "delete" && (
+              <div className="mb-4 text-center">
+                <p className="text-xs text-destructive mb-2">This will permanently delete all data including users, items, sales, and configurations.</p>
+                <p className="text-xs text-muted-foreground mb-1">Type <strong>delete permanantly</strong> to confirm:</p>
+                <input 
+                  type="text" 
+                  value={deleteConfirmText} 
+                  onChange={e => setDeleteConfirmText(e.target.value)}
+                  placeholder="delete permanantly"
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-center text-foreground focus:outline-none focus:ring-1 focus:ring-destructive/50" 
+                />
+              </div>
+            )}
             <div className="flex gap-3">
-              <button onClick={() => setConfirmAction(null)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium touch-manipulation">Cancel</button>
-              <button onClick={() => confirmAction.type === "delete" ? deleteTenant(confirmAction.tenantId) : toggleTenant(confirmAction.tenantId, confirmAction.type === "activate")}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-medium touch-manipulation ${confirmAction.type === "delete" ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"}`}>
+              <button onClick={() => { setConfirmAction(null); setDeleteConfirmText(""); }} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium touch-manipulation">Cancel</button>
+              <button 
+                onClick={() => confirmAction.type === "delete" ? deleteTenant(confirmAction.tenantId) : toggleTenant(confirmAction.tenantId, confirmAction.type === "activate")}
+                disabled={confirmAction.type === "delete" && deleteConfirmText !== "delete permanantly"}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium touch-manipulation disabled:opacity-50 ${confirmAction.type === "delete" ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"}`}>
                 {confirmAction.type === "delete" ? "Delete Forever" : "Confirm"}
               </button>
             </div>

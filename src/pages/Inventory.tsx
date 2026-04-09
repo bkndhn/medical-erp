@@ -72,7 +72,7 @@ export default function Inventory() {
     setLoading(true);
     const [{ data }, { data: t }, { data: cats }, { data: sups }] = await Promise.all([
       supabase.from("items").select("*").eq("tenant_id", tenantId).order("name"),
-      supabase.from("tenants").select("industry").eq("id", tenantId).single(),
+      supabase.from("tenants").select("industry, max_items").eq("id", tenantId).single(),
       supabase.from("categories").select("*").eq("tenant_id", tenantId).order("sort_order"),
       supabase.from("suppliers").select("id, name").eq("tenant_id", tenantId),
     ]);
@@ -113,6 +113,10 @@ export default function Inventory() {
     if (!editItem?.name || !tenantId) return;
     // Mandatory fields validation for new items
     if (!editItem.id) {
+      if (tenant?.max_items && items.length >= tenant.max_items) {
+        toast.error(`Item limit reached! Maximum ${tenant.max_items} items allowed on your current plan.`);
+        return;
+      }
       const missing: string[] = [];
       if (!(editItem as any).supplier_id) missing.push("Supplier");
       if (!editItem.price || editItem.price <= 0) missing.push("Price");
@@ -289,6 +293,11 @@ export default function Inventory() {
     }).filter(Boolean);
 
     if (mapped.length === 0) { toast.error("No valid items to import"); return; }
+    
+    if (tenant?.max_items && items.length + mapped.length > tenant.max_items) {
+      toast.error(`Import would exceed your item limit of ${tenant.max_items}. Please upgrade your plan or import fewer items.`);
+      return;
+    }
 
     setImportStep("importing"); setImportProgress(0);
     const BATCH = 50;

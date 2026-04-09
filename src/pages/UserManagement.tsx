@@ -75,13 +75,14 @@ export default function UserManagement() {
     if (!inviteForm.email || !inviteForm.password || !tenantId) return;
     setSaving(true);
     try {
-      const { data: authData, error: authErr } = await supabase.auth.signUp({
-        email: inviteForm.email,
-        password: inviteForm.password,
-        options: { data: { full_name: inviteForm.fullName } },
+      const { data: funcData, error: funcErr } = await supabase.functions.invoke('create-user', {
+        body: { email: inviteForm.email, password: inviteForm.password, fullName: inviteForm.fullName }
       });
-      if (authErr) throw authErr;
-      if (!authData.user) throw new Error("User creation failed");
+      
+      if (funcErr) throw funcErr;
+      if (funcData?.error) throw new Error(funcData.error);
+      
+      const newUserId = funcData.user.id;
 
       await new Promise(r => setTimeout(r, 1000));
 
@@ -89,10 +90,10 @@ export default function UserManagement() {
         tenant_id: tenantId,
         branch_id: inviteForm.branchId || null,
         full_name: inviteForm.fullName,
-      }).eq("user_id", authData.user.id);
+      }).eq("user_id", newUserId);
 
       await supabase.from("user_roles").insert({
-        user_id: authData.user.id,
+        user_id: newUserId,
         role: inviteForm.role as any,
       });
 
