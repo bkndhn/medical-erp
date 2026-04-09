@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart, Printer, MessageSquare, RefreshCw } from "lucide-react";
+import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart, Printer, MessageSquare, RefreshCw, Phone } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 import { printReceipt, generateWhatsAppText } from "@/lib/printService";
@@ -155,6 +155,12 @@ export default function Customers() {
                 <td className="py-3 px-3 text-muted-foreground">{c.email || "—"}</td>
                 <td className="py-3 px-3 text-muted-foreground text-xs">{c.address || "—"}</td>
                 <td className="py-3 px-3 text-right"><div className="flex items-center justify-end gap-1">
+                  {c.phone && (
+                    <>
+                      <a href={`tel:${c.phone}`} className="p-1.5 rounded hover:bg-success/10 text-muted-foreground hover:text-success" title="Call" onClick={e => e.stopPropagation()}><Phone className="h-3.5 w-3.5" /></a>
+                      <a href={`https://wa.me/${c.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-success/10 text-muted-foreground hover:text-success" title="WhatsApp" onClick={e => e.stopPropagation()}><MessageSquare className="h-3.5 w-3.5" /></a>
+                    </>
+                  )}
                   <button onClick={() => viewHistory(c)} className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary" title="Purchase history"><Eye className="h-3.5 w-3.5" /></button>
                   <button onClick={() => { setEditItem(c); setShowForm(true); }} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
                   <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -169,6 +175,12 @@ export default function Customers() {
                 <div className="flex items-start justify-between mb-1">
                   <div><h4 className="text-sm font-semibold text-foreground">{c.name}</h4><p className="text-xs text-muted-foreground">{c.phone || "No phone"}</p></div>
                   <div className="flex gap-1">
+                    {c.phone && (
+                      <>
+                        <a href={`tel:${c.phone}`} className="p-1.5 rounded hover:bg-success/10 text-muted-foreground hover:text-success" title="Call"><Phone className="h-3.5 w-3.5" /></a>
+                        <a href={`https://wa.me/${c.phone.replace(/\D/g, "")}`} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded hover:bg-success/10 text-muted-foreground hover:text-success" title="WhatsApp"><MessageSquare className="h-3.5 w-3.5" /></a>
+                      </>
+                    )}
                     <button onClick={() => viewHistory(c)} className="p-1.5 rounded hover:bg-primary/10 text-muted-foreground"><Eye className="h-3.5 w-3.5" /></button>
                     <button onClick={() => { setEditItem(c); setShowForm(true); }} className="p-1.5 rounded hover:bg-muted text-muted-foreground"><Edit2 className="h-3.5 w-3.5" /></button>
                     <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground"><Trash2 className="h-3.5 w-3.5" /></button>

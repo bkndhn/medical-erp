@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -52,11 +52,18 @@ export default function Inventory() {
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [sizeVariants, setSizeVariants] = useState<{ size: string; stock: number; price: number }[]>([]);
 
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
+  const [editBatchForm, setEditBatchForm] = useState<any>({});
+
   // Category management
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [editCategory, setEditCategory] = useState<Partial<Category> | null>(null);
   const [savingCategory, setSavingCategory] = useState(false);
   const [filterExpiry, setFilterExpiry] = useState<string | null>(null);
+
+  // Batch management
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [itemBatches, setItemBatches] = useState<Record<string, any[]>>({});
 
   // Excel import state
   const [showImport, setShowImport] = useState(false);
@@ -109,6 +116,24 @@ export default function Inventory() {
   const categoryMap = Object.fromEntries(categories.map(c => [c.id, c]));
   const supplierMap = Object.fromEntries(suppliers.map(s => [s.id, s.name]));
 
+  const toggleRow = async (itemId: string) => {
+    if (expandedRow === itemId) {
+      setExpandedRow(null);
+      return;
+    }
+    setExpandedRow(itemId);
+    if (!itemBatches[itemId] && tenantId) {
+      const { data } = await supabase
+        .from("item_batches")
+        .select("*")
+        .eq("item_id", itemId)
+        .eq("tenant_id", tenantId)
+        .eq("is_active", true)
+        .order("expiry_date", { ascending: true, nullsFirst: false });
+      if (data) setItemBatches(prev => ({ ...prev, [itemId]: data }));
+    }
+  };
+
   const handleSave = async () => {
     if (!editItem?.name || !tenantId) return;
     // Mandatory fields validation for new items
@@ -145,19 +170,43 @@ export default function Inventory() {
         if (error) throw error;
         toast.success("Item updated");
       } else {
+        // Create new item
         if (isTextile && sizeVariants.length > 0) {
           for (const variant of sizeVariants) {
-            const { error } = await supabase.from("items").insert({
+            const { data: insertedItem, error } = await supabase.from("items").insert({
               ...editItem, tenant_id: tenantId,
               name: `${editItem.name} - ${variant.size}`,
               size: variant.size, stock: variant.stock, price: variant.price, mrp: variant.price,
-            } as any);
+            } as any).select().single();
             if (error) throw error;
+            // Create opening batch
+            if (insertedItem && variant.stock > 0) {
+              await supabase.from("item_batches").insert({
+                tenant_id: tenantId, item_id: insertedItem.id,
+                batch_number: editItem.batch_number || "OPENING",
+                expiry_date: editItem.expiry_date || null,
+                purchase_price: editItem.cost_price || 0,
+                selling_price: variant.price || 0, mrp: variant.price || 0,
+                quantity_in: variant.stock,
+              } as any);
+            }
           }
           toast.success(`${sizeVariants.length} size variants created`);
         } else {
-          const { error } = await supabase.from("items").insert({ ...editItem, tenant_id: tenantId } as any);
+          const { data: insertedItem, error } = await supabase.from("items").insert({ ...editItem, tenant_id: tenantId } as any).select().single();
           if (error) throw error;
+          
+          // Create opening batch
+          if (insertedItem && (editItem.stock || 0) > 0) {
+            await supabase.from("item_batches").insert({
+              tenant_id: tenantId, item_id: insertedItem.id,
+              batch_number: editItem.batch_number || "OPENING",
+              expiry_date: editItem.expiry_date || null,
+              purchase_price: editItem.cost_price || 0,
+              selling_price: editItem.price || 0, mrp: editItem.mrp || 0,
+              quantity_in: editItem.stock || 0,
+            } as any);
+          }
           toast.success("Item created");
         }
       }
@@ -177,6 +226,29 @@ export default function Inventory() {
   const openNew = () => { setEditItem({ ...emptyItem }); setSizeVariants([]); setShowForm(true); };
 
   // Category CRUD
+  const saveBatchEdit = async () => {
+    if (!editingBatchId) return;
+    try {
+      const { error } = await supabase.from("item_batches").update({
+        expiry_date: editBatchForm.expiry_date || null,
+        selling_price: editBatchForm.selling_price || 0,
+        purchase_price: editBatchForm.purchase_price || 0,
+        batch_number: editBatchForm.batch_number || null
+      } as any).eq("id", editingBatchId);
+      if (error) throw error;
+      toast.success("Batch updated");
+      setEditingBatchId(null);
+      
+      // Refresh the specific item's batches instead of all data
+      if (expandedRow) {
+        const { data } = await supabase.from("item_batches").select("*").eq("item_id", expandedRow).order("expiry_date", { ascending: true });
+        setItemBatches(prev => ({ ...prev, [expandedRow]: data as any[] }));
+      }
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   const handleSaveCategory = async () => {
     if (!editCategory?.name || !tenantId) return;
     setSavingCategory(true);
@@ -510,41 +582,110 @@ export default function Inventory() {
               </thead>
               <tbody>
                 {filtered.map((item) => (
-                  <tr key={item.id} className="border-b border-border/30 hover:bg-muted/20 transition-colors">
-                    <td className="py-3 px-3 font-medium text-foreground">
-                      {item.name}
-                      {item.color && <span className="ml-1 text-xs text-muted-foreground">({item.color})</span>}
-                    </td>
-                    <td className="py-3 px-3 text-xs text-muted-foreground">
-                      {item.category_id && categoryMap[item.category_id] ? (
-                        <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">{categoryMap[item.category_id].icon} {categoryMap[item.category_id].name}</span>
-                      ) : "—"}
-                    </td>
-                    <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{item.sku || "—"}</td>
-                    <td className="py-3 px-3 text-right text-foreground">₹{Number(item.price).toFixed(0)}</td>
-                    <td className="py-3 px-3 text-right">
-                      <span className={`font-semibold ${Number(item.stock) <= (item.low_stock_threshold || 10) ? "text-accent" : "text-success"}`}>
-                        {Number(item.stock)}
-                      </span>
-                    </td>
-                    <td className="py-3 px-3 text-muted-foreground text-xs">{item.unit || "pcs"}</td>
-                    <td className="py-3 px-3 text-muted-foreground text-xs">{item.supplier_id ? (supplierMap[item.supplier_id] || "—") : "—"}</td>
-                    {isTextile && <td className="py-3 px-3 text-muted-foreground text-xs">{item.size || "—"}</td>}
-                    <td className="py-3 px-3 text-muted-foreground text-xs">
-                      {item.expiry_date ? (
-                        (() => {
-                          const daysLeft = Math.ceil((new Date(item.expiry_date).getTime() - Date.now()) / (1000*60*60*24));
-                          return <span className={daysLeft <= 0 ? "text-destructive font-bold" : daysLeft <= 30 ? "text-accent font-medium" : ""}>{daysLeft <= 0 ? "EXPIRED" : `${item.expiry_date} (${daysLeft}d)`}</span>;
-                        })()
-                      ) : "—"}
-                    </td>
-                    <td className="py-3 px-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => openEdit(item)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation"><Edit2 className="h-3.5 w-3.5" /></button>
-                        <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                    </td>
-                  </tr>
+                  <React.Fragment key={item.id}>
+                    <tr className="border-b border-border/30 hover:bg-muted/20 transition-colors">
+                      <td className="py-3 px-3 font-medium text-foreground flex items-center gap-2 cursor-pointer" onClick={() => toggleRow(item.id)}>
+                        <div className={`transition-transform ${expandedRow === item.id ? "rotate-90 text-primary" : "text-muted-foreground mr-1"}`}>▶</div>
+                        {item.name}
+                        {item.color && <span className="ml-1 text-xs text-muted-foreground">({item.color})</span>}
+                      </td>
+                      <td className="py-3 px-3 text-xs text-muted-foreground">
+                        {item.category_id && categoryMap[item.category_id] ? (
+                          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">{categoryMap[item.category_id].icon} {categoryMap[item.category_id].name}</span>
+                        ) : "—"}
+                      </td>
+                      <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{item.sku || "—"}</td>
+                      <td className="py-3 px-3 text-right text-foreground">₹{Number(item.price).toFixed(0)}</td>
+                      <td className="py-3 px-3 text-right">
+                        <span className={`font-semibold ${Number(item.stock) <= (item.low_stock_threshold || 10) ? "text-accent" : "text-success"}`}>
+                          {Number(item.stock)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-muted-foreground text-xs">{item.unit || "pcs"}</td>
+                      <td className="py-3 px-3 text-muted-foreground text-xs">{item.supplier_id ? (supplierMap[item.supplier_id] || "—") : "—"}</td>
+                      {isTextile && <td className="py-3 px-3 text-muted-foreground text-xs">{item.size || "—"}</td>}
+                      <td className="py-3 px-3 text-muted-foreground text-xs">
+                        {item.expiry_date ? (
+                          (() => {
+                            const daysLeft = Math.ceil((new Date(item.expiry_date).getTime() - Date.now()) / (1000*60*60*24));
+                            return <span className={daysLeft <= 0 ? "text-destructive font-bold" : daysLeft <= 30 ? "text-accent font-medium" : ""}>{daysLeft <= 0 ? "EXPIRED" : `${item.expiry_date} (${daysLeft}d)`}</span>;
+                          })()
+                        ) : "—"}
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(item)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation"><Edit2 className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expandedRow === item.id && (
+                      <tr className="bg-muted/10 border-b border-border/30">
+                        <td colSpan={isTextile ? 10 : 9} className="p-4">
+                          <div className="bg-background rounded-lg border border-border/50 p-3 shadow-inner">
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Item Batches (FEFO)</h4>
+                            {!itemBatches[item.id] ? (
+                              <div className="text-sm text-muted-foreground text-center py-2">Loading batches...</div>
+                            ) : itemBatches[item.id].length === 0 ? (
+                              <div className="text-sm text-muted-foreground text-center py-2">No active batches for this item. Opening stock will be used.</div>
+                            ) : (
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-border/50">
+                                    <th className="text-left py-2 font-medium text-muted-foreground">Batch #</th>
+                                    <th className="text-left py-2 font-medium text-muted-foreground">Expiry</th>
+                                    <th className="text-right py-2 font-medium text-muted-foreground">Sell Price</th>
+                                    <th className="text-right py-2 font-medium text-muted-foreground">Cost</th>
+                                    <th className="text-right py-2 font-medium text-muted-foreground">Status</th>
+                                    <th className="text-right py-2 font-medium text-muted-foreground">Remaining Stock</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {itemBatches[item.id].map(b => (
+                                    <tr key={b.id} className="border-b border-border/20 last:border-0 hover:bg-muted/20 group">
+                                      {editingBatchId === b.id ? (
+                                        <>
+                                          <td className="py-2"><input type="text" value={editBatchForm.batch_number} onChange={e => setEditBatchForm({...editBatchForm, batch_number: e.target.value})} className="w-24 px-2 py-1 rounded bg-background border border-border text-xs focus:outline-none" /></td>
+                                          <td className="py-2"><input type="date" value={editBatchForm.expiry_date || ""} onChange={e => setEditBatchForm({...editBatchForm, expiry_date: e.target.value})} className="w-28 px-2 py-1 rounded bg-background border border-border text-xs focus:outline-none" /></td>
+                                          <td className="py-2 whitespace-nowrap text-right"><span className="text-muted-foreground mr-1">₹</span><input type="number" value={editBatchForm.selling_price} onChange={e => setEditBatchForm({...editBatchForm, selling_price: parseFloat(e.target.value)})} className="w-16 px-1 py-1 rounded bg-background border border-border text-xs text-right focus:outline-none inline-block border-success/40" /></td>
+                                          <td className="py-2 whitespace-nowrap text-right"><span className="text-muted-foreground mr-1">₹</span><input type="number" value={editBatchForm.purchase_price} onChange={e => setEditBatchForm({...editBatchForm, purchase_price: parseFloat(e.target.value)})} className="w-16 px-1 py-1 rounded bg-background border border-border text-xs text-right focus:outline-none inline-block" /></td>
+                                          <td className="py-2 text-right">
+                                            <button onClick={saveBatchEdit} className="px-2 py-1 bg-primary text-primary-foreground text-[10px] rounded hover:bg-primary/90 mr-1 touch-manipulation">Save</button>
+                                            <button onClick={() => setEditingBatchId(null)} className="px-2 py-1 bg-muted text-muted-foreground text-[10px] rounded hover:bg-muted/80 touch-manipulation">Cancel</button>
+                                          </td>
+                                          <td className="py-2 text-right font-medium text-foreground">{Number(b.quantity_remaining)}</td>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <td className="py-2 text-foreground font-mono">
+                                            {b.batch_number || "OPENING"} 
+                                            {isAdmin && <button onClick={() => { setEditingBatchId(b.id); setEditBatchForm({...b}); }} className="ml-2 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-primary transition-opacity"><Edit2 className="h-3 w-3 inline" /></button>}
+                                          </td>
+                                          <td className="py-2 text-foreground">
+                                            {b.expiry_date ? (
+                                              <span className={new Date(b.expiry_date) < new Date() ? "text-destructive font-semibold" : ""}>{b.expiry_date}</span>
+                                            ) : "—"}
+                                          </td>
+                                          <td className="py-2 text-right text-success font-semibold">₹{Number(b.selling_price).toFixed(2)}</td>
+                                          <td className="py-2 text-right text-muted-foreground">₹{Number(b.purchase_price).toFixed(2)}</td>
+                                          <td className="py-2 text-right">
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${b.quantity_remaining > 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+                                              {b.quantity_remaining > 0 ? "Active" : "Exhausted"}
+                                            </span>
+                                          </td>
+                                          <td className="py-2 text-right font-medium text-foreground">{Number(b.quantity_remaining)}</td>
+                                        </>
+                                      )}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>

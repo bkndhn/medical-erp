@@ -18,6 +18,7 @@ export default function Reports() {
   const [sales, setSales] = useState<any[]>([]);
   const [saleItems, setSaleItems] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
+  const [itemBatches, setItemBatches] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -28,8 +29,8 @@ export default function Reports() {
   const [searchParams] = useSearchParams();
   const initialTab = (searchParams.get("tab") as Tab) || "overview";
   const [tab, setTab] = useState<Tab>(TABS.includes(initialTab as Tab) ? initialTab : "overview");
-  const [dateFrom, setDateFrom] = useState<Date | null>(null);
-  const [dateTo, setDateTo] = useState<Date | null>(null);
+  const [dateFrom, setDateFrom] = useState<Date | null>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
+  const [dateTo, setDateTo] = useState<Date | null>(() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; });
   const [searchQuery, setSearchQuery] = useState("");
 
   const [selectedBill, setSelectedBill] = useState<any>(null);
@@ -49,10 +50,12 @@ export default function Reports() {
       supabase.from("devices").select("*").eq("tenant_id", tenantId),
       supabase.from("customers").select("id, name, phone").eq("tenant_id", tenantId),
       supabase.from("payments").select("*").eq("tenant_id", tenantId),
-    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }, { data: cust }, { data: pay }]) => {
+      supabase.from("item_batches").select("*").eq("tenant_id", tenantId).eq("is_active", true),
+    ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }, { data: cust }, { data: pay }, { data: batch }]) => {
       setSales((s as any) || []); setSaleItems((si as any) || []); setItems((i as any) || []);
       setExpenses((e as any) || []); setSuppliers((sup as any) || []); setPurchases((p as any) || []);
-      setDevices((dev as any) || []); setCustomers((cust as any) || []); setPaymentRecords((pay as any) || []); setLoading(false);
+      setDevices((dev as any) || []); setCustomers((cust as any) || []); setPaymentRecords((pay as any) || []); 
+      setItemBatches((batch as any) || []); setLoading(false);
     });
   }, [tenantId]);
 
@@ -148,13 +151,23 @@ export default function Reports() {
 
   const expiryItems = useMemo(() => {
     const today = new Date();
-    return items.filter(i => i.expiry_date).map(i => {
-      const exp = new Date(i.expiry_date);
+    return itemBatches.filter(b => b.expiry_date && b.quantity_remaining > 0).map(b => {
+      const exp = new Date(b.expiry_date);
       const daysLeft = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      const stockVal = Number(i.stock) * Number(i.cost_price || i.price);
-      return { ...i, daysLeft, expired: daysLeft <= 0, stockValue: stockVal };
+      const parentItem = items.find(i => i.id === b.item_id) || {};
+      const stockVal = Number(b.quantity_remaining) * Number(b.purchase_price || 0);
+      return { 
+        ...parentItem, 
+        batch_number: b.batch_number, 
+        expiry_date: b.expiry_date, 
+        stock: b.quantity_remaining, 
+        purchase_price: b.purchase_price,
+        daysLeft, 
+        expired: daysLeft <= 0, 
+        stockValue: stockVal 
+      };
     }).sort((a, b) => a.daysLeft - b.daysLeft);
-  }, [items]);
+  }, [itemBatches, items]);
 
   const itemWiseSales = useMemo(() => {
     const map: Record<string, { name: string; qty: number; revenue: number }> = {};
@@ -385,9 +398,11 @@ export default function Reports() {
   const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️", suppliers: "🏭", schedule_h: "⚕️" };
 
   const searchedBills = useMemo(() => {
-    if (!searchQuery) return filteredSales;
+    // Exclude held (temp) and cancelled bills from reports — only show completed/refunded
+    const reportableSales = filteredSales.filter(s => s.status === "completed" || s.status === "refunded");
+    if (!searchQuery) return reportableSales;
     const q = searchQuery.toLowerCase();
-    return filteredSales.filter(s =>
+    return reportableSales.filter(s =>
       s.invoice_number?.toLowerCase().includes(q) || s.payment_mode?.toLowerCase().includes(q) || s.status?.toLowerCase().includes(q) || String(s.grand_total).includes(q)
     );
   }, [filteredSales, searchQuery]);

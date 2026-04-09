@@ -12,13 +12,20 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="CloudERP" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <link rel="manifest" href="/manifest.json" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="CloudERP - Business Management">
     <meta property="og:description" content="Multi-industry ERP platform for billing, inventory, and business management">
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="CloudERP">
     <meta name="twitter:description" content="Multi-industry ERP platform for billing, inventory, and business management">
+
+    <!-- ═══ Security Headers ═══ -->
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta http-equiv="Permissions-Policy" content="camera=(self), microphone=(self), geolocation=(), payment=(self), usb=(self), bluetooth=(self)" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in; connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co https://wa.me; media-src 'self' blob:; worker-src 'self' blob:; frame-ancestors 'none';" />
   </head>
   <body>
     <div id="root"></div>

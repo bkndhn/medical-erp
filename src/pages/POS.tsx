@@ -23,6 +23,8 @@ interface Item {
 interface CartItem {
   item: Item; quantity: number; discount: number; total: number;
   isLoose?: boolean; loosePrice?: number;
+  // FEFO batch info (auto-filled from item_batches)
+  batchId?: string; batchNumber?: string; batchExpiry?: string; batchPrice?: number; batchPurchasePrice?: number;
 }
 
 interface PaymentLine { mode: string; amount: number; }
@@ -369,7 +371,7 @@ export default function POS() {
 
 
 
-  const addToCart = useCallback((item: Item, loose = false) => {
+  const addToCart = useCallback(async (item: Item, loose = false) => {
     const currentInCart = cart.filter(ci => ci.item.id === item.id).reduce((s, ci) => {
       if (ci.isLoose && item.weight_per_unit && item.weight_per_unit > 0) return s + ci.quantity / item.weight_per_unit;
       return s + ci.quantity;
@@ -381,17 +383,68 @@ export default function POS() {
       return;
     }
 
-    const unitPrice = loose && item.weight_per_unit && item.weight_per_unit > 0
-      ? Number(item.price) / item.weight_per_unit : Number(item.price);
+    // ── FEFO batch selection ───────────────────────────────────────────────
+    // Query batches ordered by expiry ASC (First Expired First Out)
+    let batchId: string | undefined;
+    let batchNumber: string | undefined;
+    let batchExpiry: string | undefined;
+    let batchPrice: number | undefined;
+    let batchPurchasePrice: number | undefined;
+
+    if (tenantId && isOnline) {
+      try {
+        const { data: batches } = await supabase
+          .from("item_batches")
+          .select("id, batch_number, expiry_date, selling_price, purchase_price, quantity_remaining")
+          .eq("item_id", item.id)
+          .eq("tenant_id", tenantId)
+          .eq("is_active", true)
+          .gt("quantity_remaining", 0)
+          .order("expiry_date", { ascending: true, nullsFirst: false })
+          .order("created_at", { ascending: true })
+          .limit(1);
+
+        if (batches && batches.length > 0) {
+          const b = batches[0];
+          batchId = b.id;
+          batchNumber = b.batch_number || undefined;
+          batchExpiry = b.expiry_date || undefined;
+          batchPrice = Number(b.selling_price) || undefined;
+          batchPurchasePrice = Number(b.purchase_price) || undefined;
+
+          // Warn if batch expiring in <= 30 days
+          if (batchExpiry) {
+            const daysLeft = Math.ceil((new Date(batchExpiry).getTime() - Date.now()) / 86400000);
+            if (daysLeft <= 30 && daysLeft > 0) {
+              toast.warning(`⚠️ ${item.name}: batch expires in ${daysLeft} days`);
+            }
+          }
+        }
+      } catch { /* fall back to item price silently */ }
+    }
+
+    // Use batch price if available, else item master price
+    const unitPrice = batchPrice
+      ? (loose && item.weight_per_unit && item.weight_per_unit > 0 ? batchPrice / item.weight_per_unit : batchPrice)
+      : (loose && item.weight_per_unit && item.weight_per_unit > 0 ? Number(item.price) / item.weight_per_unit : Number(item.price));
+
     setCart(prev => {
-      const existing = prev.find(i => (i.item.id === item.id && !!i.isLoose === loose));
+      // For same item + same batch → increment that specific line
+      const existing = prev.find(i => i.item.id === item.id && !!i.isLoose === loose && i.batchId === batchId);
       if (existing) {
-        return prev.map(i => (i.item.id === item.id && !!i.isLoose === loose)
-          ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * (i.loosePrice || Number(i.item.price)) - i.discount } : i);
+        return prev.map(i =>
+          (i.item.id === item.id && !!i.isLoose === loose && i.batchId === batchId)
+            ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * (i.loosePrice || i.batchPrice || Number(i.item.price)) - i.discount }
+            : i
+        );
       }
-      return [...prev, { item, quantity: 1, discount: 0, total: unitPrice, isLoose: loose, loosePrice: loose ? unitPrice : undefined }];
+      return [...prev, {
+        item, quantity: 1, discount: 0, total: unitPrice,
+        isLoose: loose, loosePrice: loose ? unitPrice : undefined,
+        batchId, batchNumber, batchExpiry, batchPrice: batchPrice, batchPurchasePrice: batchPurchasePrice,
+      }];
     });
-  }, [cart]);
+  }, [cart, tenantId, isOnline]);
 
   const getCartItemKey = useCallback((ci: CartItem) => `${ci.item.id}${ci.isLoose ? "_loose" : ""}`, []);
 
@@ -487,8 +540,30 @@ export default function POS() {
 
   const fetchHeldBills = async () => {
     if (!tenantId) return;
-    const { data } = await supabase.from("sales").select("*").eq("tenant_id", tenantId).eq("status", "held").order("created_at", { ascending: false });
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const { data } = await supabase.from("sales").select("*")
+      .eq("tenant_id", tenantId).eq("status", "held")
+      .gte("created_at", todayStart.toISOString())
+      .order("created_at", { ascending: false });
     setHeldBills((data as any) || []);
+  };
+
+  // Auto-delete held bills older than today (non-blocking cleanup)
+  const cleanupOldHeldBills = async () => {
+    if (!tenantId) return;
+    try {
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      // Fetch old held bills
+      const { data: old } = await supabase.from("sales").select("id")
+        .eq("tenant_id", tenantId).eq("status", "held")
+        .lt("created_at", todayStart.toISOString());
+      if (old && old.length > 0) {
+        const ids = (old as any[]).map(r => r.id);
+        // Delete sale items first, then the sales
+        await supabase.from("sale_items").delete().in("sale_id", ids);
+        await supabase.from("sales").delete().in("id", ids);
+      }
+    } catch { /* silent — non-critical cleanup */ }
   };
 
   const recallBill = async (heldSale: any) => {
@@ -513,7 +588,7 @@ export default function POS() {
     } catch (err: any) { toast.error(err.message); }
   };
 
-  useEffect(() => { if (tenantId) fetchHeldBills(); }, [tenantId]);
+  useEffect(() => { if (tenantId) { fetchHeldBills(); cleanupOldHeldBills(); } }, [tenantId]);
 
   // Totals
   const subtotal = cart.reduce((sum, i) => sum + i.total, 0);
@@ -629,6 +704,17 @@ export default function POS() {
       toast.error("⚕️ Schedule H drug in cart — please attach prescription or enter doctor name");
       return;
     }
+    // Customer name validation (if entered, must be > 3 chars)
+    if (customerName && customerName.trim().length < 3) {
+      toast.error("Customer name must be at least 3 characters"); return;
+    }
+    // Phone validation: 10 digits, starts with 6–9 (Indian mobile)
+    if (customerPhone) {
+      const ph = customerPhone.replace(/\D/g, "");
+      if (!/^[6-9]\d{9}$/.test(ph)) {
+        toast.error("Enter a valid 10-digit mobile number starting with 6–9"); return;
+      }
+    }
     setIsSaving(true);
 
     const isSplit = paymentLines.length > 1;
@@ -637,7 +723,7 @@ export default function POS() {
     const changeAmount = cashLine ? Math.max(0, totalPaid - roundedTotal) : 0;
 
     const costTotal = cart.reduce((s, ci) => {
-      const costPrice = Number(ci.item.cost_price || 0);
+      const costPrice = Number(ci.batchPurchasePrice ?? ci.item.cost_price ?? 0);
       const qty = ci.isLoose && ci.item.weight_per_unit ? ci.quantity / ci.item.weight_per_unit : ci.quantity;
       return s + costPrice * qty;
     }, 0);
@@ -673,8 +759,12 @@ export default function POS() {
 
     const saleItemsData = cart.map(i => ({
       item_id: i.item.id, item_name: i.isLoose ? `${i.item.name} (Loose)` : i.item.name,
-      quantity: i.quantity, unit_price: i.loosePrice || Number(i.item.price), discount: i.discount,
+      quantity: i.quantity, unit_price: i.batchPrice || i.loosePrice || Number(i.item.price),
+      discount: i.discount,
       tax_amount: i.total * (Number(i.item.gst_rate) || 0) / 100, total: i.total,
+      batch_id: i.batchId || null,
+      batch_number: i.batchNumber || null,
+      expiry_date: i.batchExpiry || null,
     }));
 
     const savedCart = [...cart];
@@ -721,36 +811,58 @@ export default function POS() {
       const itemsWithSaleId = saleItemsData.map(i => ({ ...i, sale_id: sale.id }));
       await supabase.from("sale_items").insert(itemsWithSaleId as any);
 
-      // FIFO Stock deduction — deduct from earliest-expiry batch first
+      // ── FEFO Batch deduction from item_batches ─────────────────────────────
       for (const ci of savedCart) {
         let remaining = ci.isLoose && ci.item.weight_per_unit && ci.item.weight_per_unit > 0
           ? ci.quantity / ci.item.weight_per_unit : ci.quantity;
 
-        // Fetch all batches of same item name, sorted by expiry (earliest first, nulls last)
-        const { data: batches } = await supabase
-          .from("items")
-          .select("id, stock, expiry_date, batch_number")
-          .eq("tenant_id", tenantId)
-          .eq("name", ci.item.name)
-          .eq("is_active", true)
-          .order("expiry_date", { ascending: true, nullsFirst: false });
-
-        if (batches && batches.length > 1) {
-          // FIFO cascade across batches
-          for (const batch of batches) {
-            if (remaining <= 0.0001) break;
-            const batchStock = Number(batch.stock);
-            if (batchStock <= 0) continue;
-            const deduct = Math.min(remaining, batchStock);
-            const newStock = Math.max(0, batchStock - deduct);
-            await supabase.from("items").update({ stock: parseFloat(newStock.toFixed(4)) } as any).eq("id", batch.id);
-            remaining -= deduct;
+        if (ci.batchId) {
+          // Exact batch known from cart → use atomic RPC for accuracy
+          const { error: rpcErr } = await supabase.rpc("increment_batch_sold", { batch_id: ci.batchId, qty: remaining });
+          if (rpcErr) {
+            // Fallback: read-then-write manual update
+            const { data: b } = await supabase
+              .from("item_batches")
+              .select("quantity_sold")
+              .eq("id", ci.batchId)
+              .single();
+            if (b) {
+              await supabase.from("item_batches")
+                .update({ quantity_sold: Number(b.quantity_sold) + remaining } as any)
+                .eq("id", ci.batchId);
+            }
           }
         } else {
-          // Single batch fallback (original logic)
-          const newStock = Math.max(0, Number(ci.item.stock) - remaining);
-          await supabase.from("items").update({ stock: parseFloat(newStock.toFixed(4)) } as any).eq("id", ci.item.id);
+          // No batch in cart → FEFO cascade
+          const { data: batches } = await supabase
+            .from("item_batches")
+            .select("id, quantity_sold, quantity_remaining")
+            .eq("item_id", ci.item.id)
+            .eq("tenant_id", tenantId)
+            .eq("is_active", true)
+            .gt("quantity_remaining", 0)
+            .order("expiry_date", { ascending: true, nullsFirst: false })
+            .order("created_at", { ascending: true });
+
+          if (batches) {
+            for (const b of batches) {
+              if (remaining <= 0.0001) break;
+              const avail = Number(b.quantity_remaining);
+              const deduct = Math.min(remaining, avail);
+              await supabase
+                .from("item_batches")
+                .update({ quantity_sold: Number(b.quantity_sold) + deduct } as any)
+                .eq("id", b.id);
+              remaining -= deduct;
+            }
+          }
         }
+
+        // Also deduct from items.stock (aggregate)
+        const deducted = ci.isLoose && ci.item.weight_per_unit && ci.item.weight_per_unit > 0
+          ? ci.quantity / ci.item.weight_per_unit : ci.quantity;
+        const newStock = Math.max(0, Number(ci.item.stock) - deducted);
+        await supabase.from("items").update({ stock: parseFloat(newStock.toFixed(4)) } as any).eq("id", ci.item.id);
       }
 
       // Payment records
@@ -768,8 +880,19 @@ export default function POS() {
         setLastSaleForPrint({ sale, items: itemsWithSaleId, customerInfo: { name: savedCustomerName, phone: savedCustomerPhone } });
       }
 
-      const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
-      if (it) { setItems(it as unknown as Item[]); cacheItems(it); }
+      // Update stock locally for sold items (avoids expensive full re-fetch)
+      setItems(prev => {
+        const updated = prev.map(item => {
+          const cartLine = savedCart.find(ci => ci.item.id === item.id);
+          if (!cartLine) return item;
+          const deducted = cartLine.isLoose && cartLine.item.weight_per_unit && cartLine.item.weight_per_unit > 0
+            ? cartLine.quantity / cartLine.item.weight_per_unit
+            : cartLine.quantity;
+          return { ...item, stock: parseFloat(Math.max(0, Number(item.stock) - deducted).toFixed(4)) };
+        });
+        cacheItems(updated);
+        return updated;
+      });
     } catch (err: any) {
       toast.error("Background save error: " + err.message);
     }
@@ -861,6 +984,15 @@ export default function POS() {
           const isLoose = si.item_name?.includes("(Loose)");
           const stockAdd = isLoose && item.weight_per_unit ? qty / item.weight_per_unit : qty;
           await supabase.from("items").update({ stock: parseFloat((Number(item.stock) + stockAdd).toFixed(4)) } as any).eq("id", si.item_id);
+          
+          if (si.batch_id) {
+            // Restore batch stock by decrementing sold quantity
+            await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockAdd }).catch(() => {
+              supabase.from("item_batches").select("quantity_sold").eq("id", si.batch_id).single().then(({ data: b }) => {
+                if (b) supabase.from("item_batches").update({ quantity_sold: Math.max(0, Number(b.quantity_sold) - stockAdd) } as any).eq("id", si.batch_id);
+              });
+            });
+          }
         }
       }
 
@@ -893,6 +1025,15 @@ export default function POS() {
             const isLoose = si.item_name?.includes("(Loose)");
             const stockRestored = isLoose && item.weight_per_unit ? si.quantity / item.weight_per_unit : si.quantity;
             await supabase.from("items").update({ stock: parseFloat((Number(item.stock) + stockRestored).toFixed(4)) } as any).eq("id", si.item_id);
+            
+            if (si.batch_id) {
+              // Restore batch stock by decrementing sold quantity
+              await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockRestored }).catch(() => {
+                supabase.from("item_batches").select("quantity_sold").eq("id", si.batch_id).single().then(({ data: b }) => {
+                  if (b) supabase.from("item_batches").update({ quantity_sold: Math.max(0, Number(b.quantity_sold) - stockRestored) } as any).eq("id", si.batch_id);
+                });
+              });
+            }
           }
         }
       }
@@ -973,7 +1114,10 @@ export default function POS() {
     }
   };
 
-  if (!checkingShift && !activeShift) {
+  const cashRegKey = tenantId ? `cash_register_enabled_${tenantId}` : "cash_register_enabled";
+  const cashRegEnabled = localStorage.getItem(cashRegKey) !== "false";
+
+  if (cashRegEnabled && !checkingShift && !activeShift) {
     return (
       <div className="h-screen py-16 flex items-start justify-center bg-background/50 p-4">
         <div className="glass-card max-w-md w-full p-8 rounded-3xl text-center space-y-6 animate-in slide-in-from-bottom-4 duration-500 mt-20">
@@ -1343,8 +1487,34 @@ export default function POS() {
               <Plus className="h-3 w-3" /> Split Payment
             </button>
 
-            <div className="flex justify-between text-sm mb-1"><span className="text-muted-foreground">Paid</span><span className={`font-semibold ${totalPaid >= roundedTotal ? "text-success" : "text-destructive"}`}>₹{totalPaid.toFixed(0)}</span></div>
-            {totalPaid > roundedTotal + 0.01 && <div className="flex justify-between text-sm mb-2"><span className="text-muted-foreground">Change</span><span className="font-semibold text-success">₹{(totalPaid - roundedTotal).toFixed(0)}</span></div>}
+            {/* Remaining / Change display */}
+            {paymentLines.length > 1 ? (
+              <div className={`flex justify-between items-center text-sm mb-2 px-3 py-2 rounded-lg border ${
+                remaining > 0.01 ? "bg-destructive/10 border-destructive/30" : remaining < -0.01 ? "bg-success/10 border-success/30" : "bg-success/10 border-success/30"
+              }`}>
+                <span className="font-semibold text-foreground">
+                  {remaining > 0.01 ? "Still to Pay" : remaining < -0.01 ? "Change" : "✓ Fully Paid"}
+                </span>
+                <span className={`text-lg font-bold ${
+                  remaining > 0.01 ? "text-destructive" : "text-success"
+                }`}>
+                  ₹{Math.abs(remaining).toFixed(0)}
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">Paid</span>
+                  <span className={`font-semibold ${totalPaid >= roundedTotal ? "text-success" : "text-destructive"}`}>₹{totalPaid.toFixed(0)}</span>
+                </div>
+                {totalPaid > roundedTotal + 0.01 && (
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-muted-foreground">Change</span>
+                    <span className="font-semibold text-success">₹{(totalPaid - roundedTotal).toFixed(0)}</span>
+                  </div>
+                )}
+              </>
+            )}
 
             {/* WhatsApp toggle */}
             <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border/50 mb-3">

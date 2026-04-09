@@ -1,31 +1,40 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Zap, Lock, ArrowRight, Loader2, Eye, EyeOff, CheckCircle } from "lucide-react";
+import { Zap, Lock, ArrowRight, Loader2, Eye, EyeOff, CheckCircle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 export default function ResetPassword() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isRecovery, setIsRecovery] = useState(false);
+  const [linkExpired, setLinkExpired] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check for recovery token in URL hash
     const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
+    // Supabase v2 PKCE: check for access_token or type=recovery in hash
+    if (hash.includes("type=recovery") || hash.includes("access_token")) {
       setIsRecovery(true);
     } else {
-      // Also listen for auth state change with recovery event
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      // Listen for auth state change with recovery event
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === "PASSWORD_RECOVERY") {
+          setIsRecovery(true);
+        } else if (event === "SIGNED_IN" && session) {
+          // PKCE flow signs in automatically on recovery link click
           setIsRecovery(true);
         }
       });
-      return () => subscription.unsubscribe();
+      // Give 3 seconds for auth state to fire, then show expired message
+      const timeout = setTimeout(() => {
+        setLinkExpired(true);
+      }, 3000);
+      return () => { subscription.unsubscribe(); clearTimeout(timeout); };
     }
   }, []);
 
@@ -54,9 +63,22 @@ export default function ResetPassword() {
   if (!isRecovery && !success) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background px-4">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-sm text-muted-foreground">Verifying recovery link...</p>
+        <div className="text-center animate-fade-in">
+          {linkExpired ? (
+            <>
+              <AlertCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-foreground mb-2">Link Expired or Invalid</h2>
+              <p className="text-sm text-muted-foreground mb-6">This reset link has expired. Please request a new one.</p>
+              <Link to="/auth" className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors">
+                <ArrowRight className="h-4 w-4" /> Back to Sign In
+              </Link>
+            </>
+          ) : (
+            <>
+              <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+              <p className="text-sm text-muted-foreground">Verifying recovery link...</p>
+            </>
+          )}
         </div>
       </div>
     );
@@ -102,9 +124,12 @@ export default function ResetPassword() {
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Confirm Password</label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+              <input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
                 placeholder="••••••••" required minLength={6}
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+                className="w-full pl-10 pr-10 py-2.5 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+              <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
           </div>
           <button type="submit" disabled={loading}

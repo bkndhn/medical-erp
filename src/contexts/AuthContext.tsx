@@ -169,29 +169,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const { error, data } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    
-    // Track active session
+
     if (data.user) {
-      const deviceName = navigator.userAgent.includes("Mobile") ? "Mobile Device" : 
-        navigator.userAgent.includes("Chrome") ? "Chrome Browser" :
-        navigator.userAgent.includes("Firefox") ? "Firefox Browser" :
-        navigator.userAgent.includes("Safari") ? "Safari Browser" : "Unknown Browser";
-      
-      // Get user profile to find tenant_id
-      const { data: prof } = await supabase.from("profiles").select("tenant_id").eq("user_id", data.user.id).single();
+      // ----- Tenant & user status check BEFORE letting them in -----
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("tenant_id, is_active")
+        .eq("user_id", data.user.id)
+        .single();
+
+      // User account deactivated
+      if (prof && prof.is_active === false) {
+        await supabase.auth.signOut();
+        throw new Error("Your account has been deactivated. Please contact your administrator.");
+      }
+
       if (prof?.tenant_id) {
-        // Check session limit
-        const { data: tenant } = await supabase.from("tenants").select("max_sessions").eq("id", prof.tenant_id).single();
-        const { data: sessions } = await supabase.from("active_sessions").select("id").eq("tenant_id", prof.tenant_id);
-        const maxSessions = (tenant as any)?.max_sessions || 5;
-        
-        if (sessions && sessions.length >= maxSessions) {
-          // Check if user already has a session (allow re-login)
-          const existing = sessions.find((s: any) => false); // can't check user_id from here
+        const { data: tenant } = await supabase
+          .from("tenants")
+          .select("is_active, max_sessions")
+          .eq("id", prof.tenant_id)
+          .single();
+
+        // Tenant paused by super admin
+        if (tenant && tenant.is_active === false) {
           await supabase.auth.signOut();
-          throw new Error(`Maximum ${maxSessions} concurrent sessions reached for this business. Please ask an admin to terminate a session.`);
+          throw new Error("⛔ Your business account has been paused. Please contact the administrator.");
         }
-        
+
+        // Session limit check
+        const maxSessions = (tenant as any)?.max_sessions || 5;
+        const { data: sessions } = await supabase
+          .from("active_sessions")
+          .select("id")
+          .eq("tenant_id", prof.tenant_id);
+
+        if (sessions && sessions.length >= maxSessions) {
+          await supabase.auth.signOut();
+          throw new Error(`Maximum ${maxSessions} concurrent sessions reached. Ask an admin to terminate a session.`);
+        }
+
+        const deviceName = navigator.userAgent.includes("Mobile") ? "Mobile Device"
+          : navigator.userAgent.includes("Chrome") ? "Chrome Browser"
+          : navigator.userAgent.includes("Firefox") ? "Firefox Browser"
+          : navigator.userAgent.includes("Safari") ? "Safari Browser" : "Unknown Browser";
+
         await supabase.from("active_sessions").upsert({
           user_id: data.user.id,
           tenant_id: prof.tenant_id,

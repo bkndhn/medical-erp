@@ -6,7 +6,13 @@ import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
 interface PurchaseItem { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; }
-interface PurchaseItemWithUnit extends PurchaseItem { purchase_unit: string; }
+interface PurchaseItemWithUnit extends PurchaseItem {
+  purchase_unit: string;
+  batch_number: string;
+  expiry_date: string;
+  selling_price: number;
+  mrp: number;
+}
 interface ReturnLine { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; reason: string; }
 
 export default function Purchases() {
@@ -18,7 +24,7 @@ export default function Purchases() {
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ supplier_id: "", invoice_number: "", notes: "", status: "pending", purchase_date: new Date().toISOString().split('T')[0] });
-  const [purchaseItems, setPurchaseItems] = useState<PurchaseItemWithUnit[]>([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip" }]);
+  const [purchaseItems, setPurchaseItems] = useState<PurchaseItemWithUnit[]>([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip", batch_number: "", expiry_date: "", selling_price: 0, mrp: 0 }]);
   const [saving, setSaving] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
@@ -49,7 +55,7 @@ export default function Purchases() {
 
   useEffect(() => { fetch_(); }, [tenantId]);
 
-  const addPurchaseItem = () => setPurchaseItems(prev => [...prev, { item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip" }]);
+  const addPurchaseItem = () => setPurchaseItems(prev => [...prev, { item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip", batch_number: "", expiry_date: "", selling_price: 0, mrp: 0 }]);
   const removePurchaseItem = (idx: number) => { if (purchaseItems.length <= 1) return; setPurchaseItems(prev => prev.filter((_, i) => i !== idx)); };
   const updatePurchaseItem = (idx: number, field: string, value: any) => {
     setPurchaseItems(prev => prev.map((pi, i) => {
@@ -57,7 +63,13 @@ export default function Purchases() {
       const updated = { ...pi, [field]: value };
       if (field === "item_id") {
         const item = items.find(it => it.id === value);
-        if (item) { updated.item_name = item.name; updated.unit_price = Number(item.cost_price) || 0; updated.total = updated.quantity * updated.unit_price; }
+        if (item) {
+          updated.item_name = item.name;
+          updated.unit_price = Number(item.cost_price) || 0;
+          updated.selling_price = Number(item.price) || 0;  // pre-fill from item master
+          updated.mrp = Number((item as any).mrp) || 0;
+          updated.total = updated.quantity * updated.unit_price;
+        }
       }
       if (field === "quantity" || field === "unit_price") { updated.total = (field === "quantity" ? value : updated.quantity) * (field === "unit_price" ? value : updated.unit_price); }
       return updated;
@@ -81,16 +93,43 @@ export default function Purchases() {
       if (validItems.length > 0) {
         await supabase.from("purchase_items").insert(validItems.map(pi => ({
           purchase_id: purchase.id, item_id: pi.item_id || null, item_name: pi.item_name,
-          quantity: pi.quantity, unit_price: pi.unit_price, total: pi.total, purchase_unit: pi.purchase_unit || "strip",
+          quantity: pi.quantity, unit_price: pi.unit_price, total: pi.total,
+          purchase_unit: pi.purchase_unit || "strip",
+          batch_number: pi.batch_number || null,
+          expiry_date: pi.expiry_date || null,
+          selling_price: pi.selling_price || 0,
+          mrp: pi.mrp || 0,
         })) as any);
 
-        // Update stock if received
+        // Update stock + create item_batches if received
         if (form.status === "received") {
           for (const pi of validItems) {
             if (pi.item_id) {
               const item = items.find(i => i.id === pi.item_id);
               if (item) {
+                // 1. Update aggregate stock on item
                 await supabase.from("items").update({ stock: Number(item.stock || 0) + pi.quantity } as any).eq("id", pi.item_id);
+                // 2. Create a batch record for FEFO tracking
+                await supabase.from("item_batches").insert({
+                  tenant_id: tenantId,
+                  item_id: pi.item_id,
+                  purchase_id: purchase.id,
+                  batch_number: pi.batch_number || null,
+                  expiry_date: pi.expiry_date || null,
+                  purchase_price: pi.unit_price,
+                  selling_price: pi.selling_price || Number(item.price) || 0,
+                  mrp: pi.mrp || Number((item as any).mrp) || 0,
+                  quantity_in: pi.quantity,
+                } as any);
+                // 3. Update item's price to latest batch selling price (optional, if set)
+                if (pi.selling_price > 0) {
+                  await supabase.from("items").update({
+                    price: pi.selling_price,
+                    cost_price: pi.unit_price,
+                    expiry_date: pi.expiry_date || null,
+                    batch_number: pi.batch_number || null,
+                  } as any).eq("id", pi.item_id);
+                }
               }
             }
           }
@@ -98,7 +137,8 @@ export default function Purchases() {
       }
 
       toast.success("Purchase recorded");
-      setShowForm(false); setPurchaseItems([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip" }]);
+      setShowForm(false);
+      setPurchaseItems([{ item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip", batch_number: "", expiry_date: "", selling_price: 0, mrp: 0 }]);
       setForm({ supplier_id: "", invoice_number: "", notes: "", status: "pending", purchase_date: new Date().toISOString().split('T')[0] });
       fetch_();
     } catch (err: any) { toast.error(err.message); } finally { setSaving(false); }
@@ -111,7 +151,38 @@ export default function Purchases() {
   };
 
   const updateStatus = async (id: string, status: string) => {
+    const { data: purchase } = await supabase.from("purchases").select("*").eq("id", id).single();
     await supabase.from("purchases").update({ status: status as any } as any).eq("id", id);
+
+    // When marking as "received": create item_batches + update stock
+    if (status === "received" && purchase?.status !== "received" && tenantId) {
+      const { data: piRows } = await supabase.from("purchase_items").select("*").eq("purchase_id", id);
+      if (piRows && piRows.length > 0) {
+        for (const pi of piRows as any[]) {
+          if (!pi.item_id) continue;
+          // 1. Increment stock
+          const { data: itemRow } = await supabase.from("items").select("stock").eq("id", pi.item_id).single();
+          if (itemRow) {
+            await supabase.from("items")
+              .update({ stock: Number(itemRow.stock) + Number(pi.quantity) } as any)
+              .eq("id", pi.item_id);
+          }
+          // 2. Create batch record
+          await supabase.from("item_batches").insert({
+            tenant_id: tenantId,
+            item_id: pi.item_id,
+            purchase_id: id,
+            batch_number: pi.batch_number || null,
+            expiry_date: pi.expiry_date || null,
+            purchase_price: pi.unit_price,
+            selling_price: pi.selling_price || 0,
+            mrp: pi.mrp || 0,
+            quantity_in: pi.quantity,
+          } as any);
+        }
+      }
+    }
+
     toast.success(`Status updated to ${status}`);
     fetch_();
     if (viewPurchase?.id === id) setViewPurchase({ ...viewPurchase, status });
@@ -278,19 +349,36 @@ export default function Purchases() {
             <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2"><Package className="h-4 w-4 text-primary" /> Items</h4>
             <div className="space-y-2 mb-3">
               {purchaseItems.map((pi, idx) => (
-                <div key={idx} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border border-border/50">
-                  <select value={pi.item_id} onChange={e => updatePurchaseItem(idx, "item_id", e.target.value)} className="flex-1 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none">
-                    <option value="">Select item</option>
-                    {items.map(it => <option key={it.id} value={it.id}>{it.name}</option>)}
-                  </select>
+                <div key={idx} className="p-3 rounded-xl bg-muted/30 border border-border/50 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <select value={pi.item_id} onChange={e => updatePurchaseItem(idx, "item_id", e.target.value)} className="flex-1 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none">
+                      <option value="">Select item</option>
+                      {items.map(it => <option key={it.id} value={it.id}>{it.name}</option>)}
+                    </select>
                     <select value={pi.purchase_unit} onChange={e => updatePurchaseItem(idx, "purchase_unit", e.target.value)} className="w-16 px-1 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none">
                       <option value="strip">Strip</option>
                       <option value="loose">Loose</option>
                     </select>
-                  <input type="number" value={pi.quantity} onChange={e => updatePurchaseItem(idx, "quantity", parseFloat(e.target.value)||0)} placeholder="Qty" className="w-16 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
-                  <input type="number" value={pi.unit_price} onChange={e => updatePurchaseItem(idx, "unit_price", parseFloat(e.target.value)||0)} placeholder="Price" className="w-20 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
-                  <span className="text-xs font-semibold text-foreground w-20 text-right">₹{pi.total.toFixed(0)}</span>
-                  <button onClick={() => removePurchaseItem(idx)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
+                    <input type="number" value={pi.quantity} onChange={e => updatePurchaseItem(idx, "quantity", parseFloat(e.target.value)||0)} placeholder="Qty" className="w-16 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
+                    <input type="number" value={pi.unit_price} onChange={e => updatePurchaseItem(idx, "unit_price", parseFloat(e.target.value)||0)} placeholder="Value ₹" className="w-20 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono text-right focus:outline-none" />
+                    <span className="text-xs font-semibold text-foreground w-20 text-right">₹{pi.total.toFixed(0)}</span>
+                    <button onClick={() => removePurchaseItem(idx)} className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
+                  </div>
+                  {/* Row 2: Batch details */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 flex flex-col">
+                      <input type="text" value={pi.batch_number} onChange={e => updatePurchaseItem(idx, "batch_number", e.target.value)} placeholder="Batch Number" className="w-full px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none" />
+                    </div>
+                    <div className="flex-1 flex flex-col">
+                      <input type="date" value={pi.expiry_date} onChange={e => updatePurchaseItem(idx, "expiry_date", e.target.value)} title="Expiry Date" className="w-full px-2 py-1.5 rounded bg-muted border border-accent/40 text-xs text-foreground focus:outline-none" />
+                    </div>
+                    <div className="flex flex-col w-24">
+                      <input type="number" value={pi.selling_price} onChange={e => updatePurchaseItem(idx, "selling_price", parseFloat(e.target.value)||0)} placeholder="Sell ₹" className="w-full px-2 py-1.5 rounded bg-muted border border-success/40 text-success text-xs font-mono text-right focus:outline-none" />
+                    </div>
+                    <div className="flex flex-col w-24">
+                      <input type="number" value={pi.mrp} onChange={e => updatePurchaseItem(idx, "mrp", parseFloat(e.target.value)||0)} placeholder="MRP ₹" className="w-full px-2 py-1.5 rounded bg-muted border border-border text-muted-foreground text-xs font-mono text-right focus:outline-none" />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift } from "lucide-react";
+import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift, ShoppingCart, Calculator } from "lucide-react";
 import { toast } from "sonner";
 import { getPrinterConfig, savePrinterConfig, connectUSBPrinter, connectBluetoothPrinter, isUSBConnected, isBTConnected, type PrinterConfig } from "@/lib/printService";
 
@@ -50,7 +50,7 @@ export default function Settings() {
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer" | "loyalty">("profile");
+  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer" | "loyalty" | "pos">("profile");
   const [tenantSettings, setTenantSettings] = useState<any>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -61,6 +61,18 @@ export default function Settings() {
   const [defaultPayment, setDefaultPayment] = useState<string>(localStorage.getItem("pos_default_payment") || "cash");
   const [biz, setBiz] = useState<BusinessDetails>(getBusinessDetails());
   const [bizSaving, setBizSaving] = useState(false);
+
+  // Cash Register toggle — stored per-tenant in localStorage
+  const cashRegKey = tenantId ? `cash_register_enabled_${tenantId}` : "cash_register_enabled";
+  const [cashRegEnabled, setCashRegEnabled] = useState(() => {
+    const key = tenantId ? `cash_register_enabled_${tenantId}` : "cash_register_enabled";
+    return localStorage.getItem(key) !== "false"; // default ON
+  });
+  const toggleCashRegister = (val: boolean) => {
+    setCashRegEnabled(val);
+    localStorage.setItem(cashRegKey, String(val));
+    toast.success(`Cash Register ${val ? "enabled" : "disabled"}`);
+  };
 
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     return (localStorage.getItem("app-theme") as "dark" | "light") || "dark";
@@ -196,6 +208,7 @@ export default function Settings() {
     { id: "business" as const, label: "Business", icon: Store },
     { id: "payments" as const, label: "Payments", icon: CreditCard },
     { id: "loyalty" as const, label: "Loyalty", icon: Gift },
+    { id: "pos" as const, label: "POS", icon: ShoppingCart },
     { id: "printer" as const, label: "Printer", icon: Printer },
     { id: "appearance" as const, label: "Theme", icon: Palette },
   ];
@@ -418,6 +431,31 @@ export default function Settings() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "pos" && (
+          <div className="space-y-4">
+            <div className="glass-card rounded-xl p-5 space-y-5">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Calculator className="h-4 w-4 text-primary" /> POS Settings</h3>
+
+              {/* Cash Register */}
+              <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-border bg-muted/20">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Cash Register (Shift / Opening Balance)</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">When enabled, staff must open a shift with an opening cash amount before using POS. Disable if you don't track cash register shifts.</p>
+                </div>
+                <button
+                  onClick={() => toggleCashRegister(!cashRegEnabled)}
+                  className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    cashRegEnabled ? "bg-success/10 text-success border border-success/30" : "bg-muted text-muted-foreground border border-border"
+                  }`}
+                >
+                  {cashRegEnabled ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">⚙️ This setting is per-device and isolated to this business. Each branch can configure independently.</p>
             </div>
           </div>
         )}
