@@ -127,13 +127,26 @@ export default function UserManagement() {
     fetchData();
   };
 
-  const removeUser = async (userId: string) => {
-    if (!confirm("Remove this user from your business?")) return;
-    await supabase.from("user_roles").delete().eq("user_id", userId);
-    await supabase.from("user_page_access").delete().eq("user_id", userId);
-    await supabase.from("profiles").update({ tenant_id: null, branch_id: null }).eq("user_id", userId);
-    toast.success("User removed");
-    fetchData();
+  const removeUser = async (userId: string, userName: string) => {
+    if (!confirm(`Permanently delete "${userName}"? This cannot be undone.`)) return;
+
+    // Optimistically remove from UI immediately
+    setUsers(prev => prev.filter(u => u.user_id !== userId));
+
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        body: { targetUserId: userId }
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(`${userName} has been permanently deleted.`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to delete user");
+      // Restore list on failure
+      fetchData();
+    }
   };
 
   const savePageAccess = async (userId: string, pages: string[]) => {
@@ -230,7 +243,7 @@ export default function UserManagement() {
                       <button onClick={() => toggleActive(u.user_id, u.is_active)} className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation">
                         {u.is_active ? <Shield className="h-3.5 w-3.5" /> : <Shield className="h-3.5 w-3.5 text-success" />}
                       </button>
-                      <button onClick={() => removeUser(u.user_id)} className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation">
+                      <button onClick={() => removeUser(u.user_id, u.full_name || "this user")} title="Delete user permanently" className="p-2 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
