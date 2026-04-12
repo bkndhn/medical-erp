@@ -7,7 +7,7 @@ import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { toast } from "sonner";
 import { cacheItems, getCachedItems, cacheCategories, getCachedCategories, savePendingSale, getPendingSales, clearPendingSale } from "@/lib/indexedDB";
-import { getPrinterConfig } from "@/lib/printService";
+import { getPrinterConfig, printReceipt } from "@/lib/printService";
 import { useReactToPrint } from "react-to-print";
 import { Receipt } from "@/components/Receipt";
 
@@ -41,6 +41,7 @@ const shortcutMap = [
   { key: 'F9', action: 'Open Payment', category: 'Billing' },
   { key: 'F10', action: 'Delete Bill', category: 'Billing' },
   { key: 'F12', action: 'Print & Complete', category: 'Billing' },
+  { key: 'R', action: 'Process Return', category: 'Billing' },
   { key: 'Enter', action: 'Confirm Payment', category: 'Payment' },
   { key: '?', action: 'Shortcut Help', category: 'General' },
 ];
@@ -55,7 +56,9 @@ const MOBILE_SHORTCUTS = [
 ];
 
 export default function POS() {
-  const { tenantId, branchId, user, hasRole } = useAuth();
+  const { tenantId, branchId, activeBranchId, allBranches, user, hasRole } = useAuth();
+  const activeBranchName = activeBranchId ? allBranches.find(b => b.id === activeBranchId)?.name : null;
+  const currentBranchDetails = allBranches.find(b => b.id === (activeBranchId || branchId));
   const isAdmin = hasRole("super_admin") || hasRole("admin");
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -98,6 +101,9 @@ export default function POS() {
 
   const [showMobileShortcuts, setShowMobileShortcuts] = useState(false);
 
+  const [customerRewardPoints, setCustomerRewardPoints] = useState(0);
+  const [useRewardPoints, setUseRewardPoints] = useState(false);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   // Shift & Loyalty
   const [activeShift, setActiveShift] = useState<any>(null);
   const [checkingShift, setCheckingShift] = useState(true);
@@ -114,6 +120,18 @@ export default function POS() {
 
   const receiptRef = useRef<HTMLDivElement>(null);
   const [lastSaleForPrint, setLastSaleForPrint] = useState<{sale: any, items: any[], customerInfo?: any} | null>(null);
+
+  // Batch Selection State
+  const [showBatchSelect, setShowBatchSelect] = useState(false);
+  const [batchesForSelection, setBatchesForSelection] = useState<any[]>([]);
+  const [pendingItemForBatch, setPendingItemForBatch] = useState<{ item: Item, loose: boolean } | null>(null);
+
+  // Returns State
+  const [showReturns, setShowReturns] = useState(false);
+  const [returnInvoiceNo, setReturnInvoiceNo] = useState("");
+  const [returnLoading, setReturnLoading] = useState(false);
+  const [saleToReturn, setSaleToReturn] = useState<any>(null);
+  const [returnLines, setReturnLines] = useState<any[]>([]);
 
   const handleReactPrint = useReactToPrint({
     contentRef: receiptRef,
@@ -247,10 +265,18 @@ export default function POS() {
     if (!tenantId) return;
     const loadData = async () => {
       try {
+        // Build items query — scope to active branch if set
+        let itemsQuery = supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
+        if (activeBranchId) itemsQuery = itemsQuery.eq("branch_id", activeBranchId);
+
+        // Build sales count query — scope to active branch if set
+        let salesCountQuery = supabase.from("sales").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId);
+        if (activeBranchId) salesCountQuery = salesCountQuery.eq("branch_id", activeBranchId);
+
         const [{ data: it }, { data: cat }, { count }, { data: pm }, { data: shift }, { data: settings }] = await Promise.all([
-          supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name"),
+          itemsQuery,
           supabase.from("categories").select("*").eq("tenant_id", tenantId).order("sort_order"),
-          supabase.from("sales").select("id", { count: "exact", head: true }).eq("tenant_id", tenantId),
+          salesCountQuery,
           supabase.from("payment_methods").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("sort_order"),
           supabase.from("shifts").select("*").eq("tenant_id", tenantId).eq("user_id", user?.id).eq("status", "open").maybeSingle(),
           supabase.from("tenant_settings").select("*").eq("tenant_id", tenantId).maybeSingle()
@@ -295,7 +321,7 @@ export default function POS() {
       }
     };
     loadData();
-  }, [tenantId, user]);
+  }, [tenantId, user, activeBranchId]);
 
   const billNo = `INV-${String(billCount).padStart(4, "0")}`;
 
@@ -393,7 +419,7 @@ export default function POS() {
 
     if (tenantId && isOnline) {
       try {
-        const { data: batches } = await supabase
+        let batchQuery = supabase
           .from("item_batches")
           .select("id, batch_number, expiry_date, selling_price, purchase_price, quantity_remaining")
           .eq("item_id", item.id)
@@ -401,10 +427,19 @@ export default function POS() {
           .eq("is_active", true)
           .gt("quantity_remaining", 0)
           .order("expiry_date", { ascending: true, nullsFirst: false })
-          .order("created_at", { ascending: true })
-          .limit(1);
+          .order("created_at", { ascending: true });
+        if (activeBranchId) batchQuery = (batchQuery as any).eq("branch_id", activeBranchId);
+        const { data: batches } = await batchQuery;
 
-        if (batches && batches.length > 0) {
+        if (batches && batches.length > 1) {
+          // INTERCEPT: Multiple batches found, show selector
+          setBatchesForSelection(batches);
+          setPendingItemForBatch({ item, loose });
+          setShowBatchSelect(true);
+          return;
+        }
+
+        if (batches && batches.length === 1) {
           const b = batches[0];
           batchId = b.id;
           batchNumber = b.batch_number || undefined;
@@ -423,13 +458,11 @@ export default function POS() {
       } catch { /* fall back to item price silently */ }
     }
 
-    // Use batch price if available, else item master price
     const unitPrice = batchPrice
       ? (loose && item.weight_per_unit && item.weight_per_unit > 0 ? batchPrice / item.weight_per_unit : batchPrice)
       : (loose && item.weight_per_unit && item.weight_per_unit > 0 ? Number(item.price) / item.weight_per_unit : Number(item.price));
 
     setCart(prev => {
-      // For same item + same batch → increment that specific line
       const existing = prev.find(i => i.item.id === item.id && !!i.isLoose === loose && i.batchId === batchId);
       if (existing) {
         return prev.map(i =>
@@ -441,10 +474,36 @@ export default function POS() {
       return [...prev, {
         item, quantity: 1, discount: 0, total: unitPrice,
         isLoose: loose, loosePrice: loose ? unitPrice : undefined,
-        batchId, batchNumber, batchExpiry, batchPrice: batchPrice, batchPurchasePrice: batchPurchasePrice,
+        batchId, batchNumber, batchExpiry, batchPrice, batchPurchasePrice,
       }];
     });
-  }, [cart, tenantId, isOnline]);
+  }, [cart, tenantId, isOnline, activeBranchId]);
+
+  const selectSpecificBatch = (batch: any) => {
+    if (!pendingItemForBatch) return;
+    const { item, loose } = pendingItemForBatch;
+    const unitPrice = Number(batch.selling_price) || Number(item.price);
+    const finalPrice = loose && item.weight_per_unit && item.weight_per_unit > 0 ? unitPrice / item.weight_per_unit : unitPrice;
+
+    setCart(prev => {
+      const existing = prev.find(i => i.item.id === item.id && !!i.isLoose === loose && i.batchId === batch.id);
+      if (existing) {
+        return prev.map(i =>
+          (i.item.id === item.id && !!i.isLoose === loose && i.batchId === batch.id)
+            ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * finalPrice - i.discount }
+            : i
+        );
+      }
+      return [...prev, {
+        item, quantity: 1, discount: 0, total: finalPrice,
+        isLoose: loose, loosePrice: loose ? finalPrice : undefined,
+        batchId: batch.id, batchNumber: batch.batch_number, batchExpiry: batch.expiry_date,
+        batchPrice: Number(batch.selling_price), batchPurchasePrice: Number(batch.purchase_price),
+      }];
+    });
+    setShowBatchSelect(false);
+    setPendingItemForBatch(null);
+  };
 
   const getCartItemKey = useCallback((ci: CartItem) => `${ci.item.id}${ci.isLoose ? "_loose" : ""}`, []);
 
@@ -594,11 +653,19 @@ export default function POS() {
   const subtotal = cart.reduce((sum, i) => sum + i.total, 0);
   const billDiscount = discountType === "percent" ? (subtotal * discountValue / 100) : discountValue;
   const afterDiscount = Math.max(0, subtotal - billDiscount);
+
+  const loyaltyMaxRupeeValue = tenantSettings?.loyalty_enabled && tenantSettings?.rupees_per_point 
+    ? (customerRewardPoints * Number(tenantSettings.rupees_per_point)) : 0;
+  const loyaltyDiscount = useRewardPoints ? Math.min(loyaltyMaxRupeeValue, afterDiscount) : 0;
+  const loyaltyPointsConsumed = useRewardPoints && tenantSettings?.rupees_per_point
+    ? Number((loyaltyDiscount / Number(tenantSettings.rupees_per_point)).toFixed(2)) : 0;
+  const afterLoyaltyDiscount = Math.max(0, afterDiscount - loyaltyDiscount);
+
   const gstTotal = cart.reduce((sum, i) => {
     const itemProportion = i.total / (subtotal || 1);
-    return sum + (afterDiscount * itemProportion * (Number(i.item.gst_rate) || 0) / 100);
+    return sum + (afterLoyaltyDiscount * itemProportion * (Number(i.item.gst_rate) || 0) / 100);
   }, 0);
-  const grandTotalRaw = afterDiscount + gstTotal;
+  const grandTotalRaw = afterLoyaltyDiscount + gstTotal;
   const roundOff = Math.round(grandTotalRaw) - grandTotalRaw;
   const roundedTotal = Math.round(grandTotalRaw);
   const totalPaid = paymentLines.reduce((s, l) => s + l.amount, 0);
@@ -617,24 +684,86 @@ export default function POS() {
     setShowPayment(true);
   };
 
+  const checkCustomerLoyalty = async () => {
+    if (!tenantId || !customerPhone || customerPhone.length < 10) return;
+    const { data } = await supabase.from("customers").select("id, name, reward_points")
+      .eq("tenant_id", tenantId).eq("phone", customerPhone).single();
+      
+    if (data) {
+      setCustomerId(data.id);
+      setCustomerName(data.name);
+      setCustomerRewardPoints(Number(data.reward_points) || 0);
+    } else {
+      setCustomerId(null);
+      setCustomerRewardPoints(0);
+      setUseRewardPoints(false);
+    }
+  };
+
+  const handleFetchInvoiceForReturn = async () => {
+    if (!returnInvoiceNo || !tenantId) return;
+    setReturnLoading(true);
+    try {
+      const { data: sale, error } = await supabase.from("sales").select("*, sale_items(*)").eq("invoice_number", returnInvoiceNo).eq("tenant_id", tenantId).single();
+      if (error) throw error;
+      setSaleToReturn(sale);
+      setReturnLines(sale.sale_items.map((si: any) => ({ ...si, returnQty: 0 })));
+    } catch (err: any) { toast.error("Invoice not found"); }
+    finally { setReturnLoading(false); }
+  };
+
+  const processReturn = async () => {
+    if (!saleToReturn || returnLines.every(l => l.returnQty <= 0)) return;
+    setReturnLoading(true);
+    try {
+      const returnTotal = returnLines.reduce((s, l) => s + (l.returnQty * (Number(l.unit_price) || 0)), 0);
+      const { data: retSale, error: sErr } = await supabase.from("sales").insert({
+        tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
+        invoice_number: `RET-${saleToReturn.invoice_number}-${Date.now().toString(36).toUpperCase()}`,
+        customer_id: saleToReturn.customer_id, customer_name: saleToReturn.customer_name,
+        subtotal: -returnTotal, grand_total: -returnTotal, status: "completed",
+        payment_mode: "cash", amount_paid: -returnTotal,
+      } as any).select().single();
+      if (sErr) throw sErr;
+
+      for (const line of returnLines.filter(l => l.returnQty > 0)) {
+        await supabase.from("sale_items").insert({
+          sale_id: retSale.id, item_id: line.item_id, item_name: `RETURN: ${line.item_name}`,
+          quantity: -line.returnQty, unit_price: line.unit_price, total: -(line.returnQty * line.unit_price),
+        } as any);
+
+        const { data: item } = await supabase.from("items").select("stock").eq("id", line.item_id).single();
+        await supabase.from("items").update({ stock: Number(item.stock) + line.returnQty }).eq("id", line.item_id);
+        
+        if (line.batch_id) {
+          const { data: batch } = await supabase.from("item_batches").select("quantity_remaining").eq("id", line.batch_id).single();
+          if (batch) await supabase.from("item_batches").update({ quantity_remaining: Number(batch.quantity_remaining) + line.returnQty }).eq("id", line.batch_id);
+        }
+      }
+      toast.success("Return processed successfully");
+      setShowReturns(false); setSaleToReturn(null); setReturnInvoiceNo("");
+    } catch (err: any) { toast.error(err.message); }
+    finally { setReturnLoading(false); }
+  };
+
   const autoSaveCustomer = async (saleId: string) => {
     if (!tenantId || (!customerName && !customerPhone)) return null;
     try {
-      let customerId: string | null = null;
-      if (customerPhone) {
+      let resolvedId = customerId;
+      if (!resolvedId && customerPhone) {
         const { data: existing } = await supabase.from("customers").select("id").eq("tenant_id", tenantId).eq("phone", customerPhone).single();
-        if (existing) customerId = existing.id;
+        if (existing) resolvedId = existing.id;
       }
-      if (!customerId && customerName) {
+      if (!resolvedId && customerName) {
         const { data: newCust } = await supabase.from("customers").insert({
           tenant_id: tenantId, name: customerName, phone: customerPhone || null,
         } as any).select("id").single();
-        customerId = newCust?.id || null;
+        resolvedId = newCust?.id || null;
       }
-      if (customerId && saleId) {
-        await supabase.from("sales").update({ customer_id: customerId } as any).eq("id", saleId);
+      if (resolvedId && saleId) {
+        await supabase.from("sales").update({ customer_id: resolvedId } as any).eq("id", saleId);
       }
-      return customerId;
+      return resolvedId;
     } catch { return null; }
   };
 
@@ -745,9 +874,13 @@ export default function POS() {
       } catch { /* keep base64 as fallback */ }
     }
 
+    // Compute Reward Points Earned logic if tenant setting enabled
+    const pointsEarned = tenantSettings?.loyalty_enabled && tenantSettings?.points_per_rupee
+      ? Number((roundedTotal * Number(tenantSettings.points_per_rupee)).toFixed(2)) : 0;
+
     const saleData = {
       tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
-      invoice_number: billNo, subtotal, discount: billDiscount, tax_total: gstTotal,
+      invoice_number: billNo, subtotal: parseFloat(subtotal.toFixed(4)), discount: parseFloat((billDiscount + loyaltyDiscount).toFixed(4)), tax_total: parseFloat(gstTotal.toFixed(4)),
       grand_total: roundedTotal, payment_mode: primaryMode as any,
       amount_paid: totalPaid, change_amount: changeAmount, status: "completed" as any,
       cost_total: Math.round(costTotal * 100) / 100,
@@ -755,6 +888,8 @@ export default function POS() {
       rx_image_url: finalRxUrl || null,
       doctor_name: rxDoctorName || null,
       rx_required: hasScheduleH,
+      reward_points_used: loyaltyPointsConsumed,
+      reward_points_earned: pointsEarned,
     };
 
     const saleItemsData = cart.map(i => ({
@@ -873,11 +1008,23 @@ export default function POS() {
         } as any);
       }
 
-      await autoSaveCustomer(sale.id);
+      const resolvedCustId = await autoSaveCustomer(sale.id);
+
+      if (resolvedCustId && (loyaltyPointsConsumed > 0 || pointsEarned > 0)) {
+        await supabase.rpc('update_customer_reward_points', {
+          p_customer_id: resolvedCustId,
+          p_points_used: loyaltyPointsConsumed,
+          p_points_earned: pointsEarned
+        });
+      }
 
       const config = getPrinterConfig();
       if (config.enabled && config.autoPrint) {
-        setLastSaleForPrint({ sale, items: itemsWithSaleId, customerInfo: { name: savedCustomerName, phone: savedCustomerPhone } });
+        if (config.type === "usb") {
+          printReceipt(sale, itemsWithSaleId, savedCustomerName, { name: savedCustomerName, phone: savedCustomerPhone });
+        } else {
+          setLastSaleForPrint({ sale, items: itemsWithSaleId, customerInfo: { name: savedCustomerName, phone: savedCustomerPhone } });
+        }
       }
 
       // Update stock locally for sold items (avoids expensive full re-fetch)
@@ -953,7 +1100,12 @@ export default function POS() {
 
   const reprintBill = async (sale: any) => {
     const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
-    setLastSaleForPrint({ sale, items: items || [] });
+    const config = getPrinterConfig();
+    if (config.type === "usb") {
+      printReceipt(sale, items || []);
+    } else {
+      setLastSaleForPrint({ sale, items: items || [] });
+    }
     setShowReprint(false);
   };
 
@@ -1458,9 +1610,22 @@ export default function POS() {
             {billDiscount > 0 && <div className="text-center text-xs text-success mb-2">Discount: ₹{billDiscount.toFixed(0)}</div>}
 
             {/* Customer info */}
-            <div className="flex gap-2 mb-3 p-2 rounded-lg bg-muted/30 border border-border/50">
-              <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Customer name" className="flex-1 min-w-0 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
-              <input value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} placeholder="Phone" className="w-24 shrink-0 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50" />
+            <div className="flex gap-2 mb-3 p-2 rounded-lg bg-muted/30 border border-border/50 flex-col">
+              <div className="flex gap-2">
+                <input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Customer name" className="flex-1 min-w-0 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                <input value={customerPhone} onBlur={checkCustomerLoyalty} onChange={e => setCustomerPhone(e.target.value)} placeholder="Phone" className="w-24 shrink-0 px-2 py-1.5 rounded bg-muted border border-border text-xs text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-primary/50" />
+              </div>
+              {tenantSettings?.loyalty_enabled && customerRewardPoints > 0 && (
+                <div className="flex items-center justify-between text-xs px-1 py-0.5 mt-1">
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <Zap className="h-3 w-3 text-amber-500" /> {customerRewardPoints.toFixed(0)} Loyalty Points (₹{loyaltyMaxRupeeValue.toFixed(2)})
+                  </span>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={useRewardPoints} onChange={() => setUseRewardPoints(!useRewardPoints)} className="rounded border-border bg-background text-primary" />
+                    <span>Redeem</span>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2 mb-3">
@@ -1766,6 +1931,7 @@ export default function POS() {
           sale={lastSaleForPrint?.sale}
           items={lastSaleForPrint?.items || []}
           customerInfo={lastSaleForPrint?.customerInfo}
+          branchDetails={currentBranchDetails}
         />
       </div>
     </div>

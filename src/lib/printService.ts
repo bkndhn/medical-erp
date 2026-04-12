@@ -110,11 +110,11 @@ function getBizDetails(): BizDetails {
 }
 
 // Generate receipt HTML for browser print
-export function generateReceiptHTML(sale: any, items: any[], businessName?: string, customerInfo?: { name?: string; phone?: string }): string {
+export function generateReceiptHTML(sale: any, items: any[], businessName?: string, customerInfo?: { name?: string; phone?: string }, branchDetails?: any): string {
   const is80mm = getPrinterConfig().paperWidth === "80mm";
   const width = is80mm ? "302px" : "218px";
   const biz = getBizDetails();
-  const name = biz.storeName || businessName || "Store";
+  const name = branchDetails?.receipt_header || branchDetails?.name || biz.storeName || businessName || "Store";
   
   const itemRows = items.map(si => {
     const qtyDisplay = si.sale_unit === "loose" ? `${si.quantity} loose` : `${si.quantity}`;
@@ -122,19 +122,19 @@ export function generateReceiptHTML(sale: any, items: any[], businessName?: stri
   }).join("");
 
   const headerLines: string[] = [];
-  headerLines.push(`<div class="center bold" style="font-size:14px">${name}</div>`);
-  if (biz.address) headerLines.push(`<div class="center" style="font-size:9px">${biz.address}</div>`);
-  if (biz.phone) headerLines.push(`<div class="center" style="font-size:9px">Ph: ${biz.phone}</div>`);
-  if (biz.gstNumber) headerLines.push(`<div class="center" style="font-size:9px">GSTIN: ${biz.gstNumber}</div>`);
-  if (biz.fssaiNumber) headerLines.push(`<div class="center" style="font-size:9px">FSSAI: ${biz.fssaiNumber}</div>`);
-  if (biz.dlNumber) headerLines.push(`<div class="center" style="font-size:9px">DL: ${biz.dlNumber}</div>`);
+  headerLines.push(`<div class="center bold" style="font-size:14px;white-space:pre-line">${name}</div>`);
+  if (branchDetails?.address || biz.address) headerLines.push(`<div class="center" style="font-size:9px">${branchDetails?.address || biz.address}</div>`);
+  if (branchDetails?.phone || biz.phone) headerLines.push(`<div class="center" style="font-size:9px">Ph: ${branchDetails?.phone || biz.phone}</div>`);
+  if (branchDetails?.gst_number || biz.gstNumber) headerLines.push(`<div class="center" style="font-size:9px">GSTIN: ${branchDetails?.gst_number || biz.gstNumber}</div>`);
+  if (branchDetails?.fssai_number || biz.fssaiNumber) headerLines.push(`<div class="center" style="font-size:9px">FSSAI: ${branchDetails?.fssai_number || biz.fssaiNumber}</div>`);
+  if (branchDetails?.drug_license || biz.dlNumber) headerLines.push(`<div class="center" style="font-size:9px">DL: ${branchDetails?.drug_license || biz.dlNumber}</div>`);
   headerLines.push(`<div class="center" style="font-size:10px;margin-top:2px">Tax Invoice</div>`);
 
   const customerSection = customerInfo?.name
     ? `<div style="font-size:10px;margin-top:2px">Customer: ${customerInfo.name}${customerInfo.phone ? ` | ${customerInfo.phone}` : ""}</div>`
     : "";
 
-  const tagline = biz.tagline || "Thank you! Visit again.";
+  const tagline = branchDetails?.receipt_footer || branchDetails?.tagline || biz.tagline || "Thank you! Visit again.";
 
   return `<!DOCTYPE html><html><head><title>${sale.invoice_number}</title>
 <style>
@@ -170,11 +170,77 @@ export function generateReceiptHTML(sale: any, items: any[], businessName?: stri
 </body></html>`;
 }
 
-export function printReceipt(sale: any, items: any[], businessName?: string, customerInfo?: { name?: string; phone?: string }) {
+import { EscPosPrinter } from "./escpos";
+
+export async function printReceipt(sale: any, items: any[], businessName?: string, customerInfo?: { name?: string; phone?: string }, branchDetails?: any) {
   const config = getPrinterConfig();
   if (!config.enabled) return;
   
-  const html = generateReceiptHTML(sale, items, businessName, customerInfo);
+  if (config.type === "usb") {
+    const printer = new EscPosPrinter();
+    const connected = await printer.connect();
+    if (!connected) {
+      alert("Failed to connect to USB printer. Ensure it is plugged in and authorized.");
+      return;
+    }
+    
+    const biz = getBizDetails();
+    const name = branchDetails?.receipt_header || branchDetails?.name || biz.storeName || businessName || "Store";
+    const width = config.paperWidth === "80mm" ? 48 : 32;
+
+    printer.init();
+    printer.alignCenter();
+    // Handle multi-line header
+    const nameLines = name.split('\n');
+    nameLines.forEach((line: string, idx: number) => {
+        if (idx === 0) printer.bold(true).text(line).newline().bold(false);
+        else printer.text(line).newline();
+    });
+    
+    if (branchDetails?.address || biz.address) printer.text(branchDetails?.address || biz.address).newline();
+    if (branchDetails?.phone || biz.phone) printer.text(`Ph: ${branchDetails?.phone || biz.phone}`).newline();
+    if (branchDetails?.gst_number || biz.gstNumber) printer.text(`GSTIN: ${branchDetails?.gst_number || biz.gstNumber}`).newline();
+    if (branchDetails?.drug_license || biz.dlNumber) printer.text(`DL: ${branchDetails?.drug_license || biz.dlNumber}`).newline();
+    if (branchDetails?.fssai_number || biz.fssaiNumber) printer.text(`FSSAI: ${branchDetails?.fssai_number || biz.fssaiNumber}`).newline();
+    printer.newline();
+    
+    printer.alignLeft();
+    printer.text(`Bill: ${sale.invoice_number}`).newline();
+    printer.text(`Date: ${new Date(sale.created_at).toLocaleString()}`).newline();
+    if (customerInfo?.name) printer.text(`Customer: ${customerInfo.name} ${customerInfo.phone || ''}`).newline();
+    
+    printer.separator("-", width);
+    items.forEach(si => {
+      const qtyDisplay = si.sale_unit === "loose" ? `${si.quantity}L` : `${si.quantity}`;
+      printer.columns(`${si.item_name} (x${qtyDisplay})`, `Rs.${Number(si.total).toFixed(1)}`, width);
+    });
+    
+    printer.separator("-", width);
+    printer.columns("Subtotal", `Rs.${Number(sale.subtotal).toFixed(2)}`, width);
+    if (Number(sale.discount || 0) > 0) printer.columns("Discount", `-Rs.${Number(sale.discount).toFixed(2)}`, width);
+    if (Number(sale.tax_total || 0) > 0) printer.columns("GST", `Rs.${Number(sale.tax_total).toFixed(2)}`, width);
+    
+    printer.separator("-", width);
+    printer.bold(true);
+    printer.size(1, 1).columns("TOTAL", `Rs.${Number(sale.grand_total).toFixed(0)}`, width).size(0, 0);
+    printer.bold(false);
+    
+    printer.separator("-", width);
+    printer.alignCenter();
+    
+    const footerLines = (branchDetails?.receipt_footer || branchDetails?.tagline || biz.tagline || "Thank you! Visit again.").split('\n');
+    footerLines.forEach((line: string) => printer.text(line).newline());
+    
+    printer.newline(3); // extra padding before cut
+    printer.cut();
+    
+    await printer.flush();
+    await printer.close();
+    return;
+  }
+
+  // Fallback to Browser Print
+  const html = generateReceiptHTML(sale, items, businessName, customerInfo, branchDetails);
   const win = window.open("", "_blank", "width=400,height=600");
   if (!win) return;
   win.document.write(html);
@@ -187,20 +253,21 @@ export function printReceipt(sale: any, items: any[], businessName?: string, cus
   }
 }
 
-export function generateWhatsAppText(sale: any, items: any[], customerInfo?: { name?: string; phone?: string }): string {
+export function generateWhatsAppText(sale: any, items: any[], customerInfo?: { name?: string; phone?: string }, branchDetails?: any): string {
   const biz = getBizDetails();
-  const name = biz.storeName || "Store";
+  const name = branchDetails?.receipt_header || branchDetails?.name || biz.storeName || "Store";
   const itemsText = items.map(si => {
     const qtyLabel = si.sale_unit === "loose" ? `${si.quantity} loose` : `x${si.quantity}`;
     return `${si.item_name} ${qtyLabel} = ₹${Number(si.total).toFixed(0)}`;
   }).join("\n");
   
-  let msg = `🧾 *${name}*\n`;
-  if (biz.gstNumber) msg += `GSTIN: ${biz.gstNumber}\n`;
+  let msg = `🧾 *${(name.split('\n')[0])}*\n`;
+  if (branchDetails?.gst_number || biz.gstNumber) msg += `GSTIN: ${branchDetails?.gst_number || biz.gstNumber}\n`;
   msg += `\nInvoice: *${sale.invoice_number}*\n${new Date(sale.created_at).toLocaleString()}\n`;
   if (customerInfo?.name) msg += `Customer: ${customerInfo.name}\n`;
   msg += `\n${itemsText}\n\n`;
   if (Number(sale.discount || 0) > 0) msg += `Discount: -₹${Number(sale.discount).toFixed(0)}\n`;
-  msg += `*Total: ₹${Number(sale.grand_total).toFixed(0)}*\nPayment: ${sale.payment_mode.toUpperCase()}\n\n${biz.tagline || "Thank you! 🙏"}`;
+  const footer = branchDetails?.receipt_footer || branchDetails?.tagline || biz.tagline || "Thank you! 🙏";
+  msg += `*Total: ₹${Number(sale.grand_total).toFixed(0)}*\nPayment: ${sale.payment_mode.toUpperCase()}\n\n${footer}`;
   return msg;
 }

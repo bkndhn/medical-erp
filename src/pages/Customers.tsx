@@ -13,7 +13,7 @@ interface Customer {
 }
 
 export default function Customers() {
-  const { tenantId } = useAuth();
+  const { tenantId, allBranches } = useAuth();
   const [items, setItems] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -89,13 +89,15 @@ export default function Customers() {
   const printBill = () => {
     if (!selectedBill) return;
     const cust = viewCustomer ? { name: viewCustomer.name, phone: viewCustomer.phone } : undefined;
-    printReceipt(selectedBill, billItems, undefined, cust);
+    const currentBranchDetails = allBranches.find(b => b.id === selectedBill.branch_id);
+    printReceipt(selectedBill, billItems, undefined, cust, currentBranchDetails);
   };
 
   const shareOnWhatsApp = () => {
     if (!selectedBill) return;
     const cust = viewCustomer ? { name: viewCustomer.name, phone: viewCustomer.phone } : undefined;
-    const msg = generateWhatsAppText(selectedBill, billItems, cust);
+    const currentBranchDetails = allBranches.find(b => b.id === selectedBill.branch_id);
+    const msg = generateWhatsAppText(selectedBill, billItems, cust, currentBranchDetails);
     const phone = viewCustomer?.phone ? viewCustomer.phone.replace(/\D/g, "") : "";
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };

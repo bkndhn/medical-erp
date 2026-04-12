@@ -14,12 +14,13 @@ interface ReceiptProps {
   items: Item[];
   businessName?: string;
   customerInfo?: { name?: string; phone?: string };
+  branchDetails?: any;
 }
 
 export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
-  ({ sale, items, businessName, customerInfo }, ref) => {
+  ({ sale, items, businessName, customerInfo, branchDetails }, ref) => {
     const biz = JSON.parse(localStorage.getItem("business_details") || "{}");
-    const name = biz.storeName || businessName || "Store";
+    const name = branchDetails?.receipt_header || branchDetails?.name || biz.storeName || businessName || "Store";
     const config = getPrinterConfig();
     const is80mm = config.paperWidth === "80mm";
     
@@ -41,14 +42,14 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
           lineHeight: "1.2"
         }}
       >
-        <div style={{ textAlign: "center", fontWeight: "bold", fontSize: "14px", marginBottom: "4px" }}>
+        <div style={{ textAlign: "center", fontWeight: "bold", fontSize: "14px", marginBottom: "4px", whiteSpace: "pre-line" }}>
           {name}
         </div>
-        {biz.address && <div style={{ textAlign: "center", fontSize: "9px" }}>{biz.address}</div>}
-        {biz.phone && <div style={{ textAlign: "center", fontSize: "9px" }}>Ph: {biz.phone}</div>}
-        {biz.gstNumber && <div style={{ textAlign: "center", fontSize: "9px" }}>GSTIN: {biz.gstNumber}</div>}
-        {biz.fssaiNumber && <div style={{ textAlign: "center", fontSize: "9px" }}>FSSAI: {biz.fssaiNumber}</div>}
-        {biz.dlNumber && <div style={{ textAlign: "center", fontSize: "9px" }}>DL: {biz.dlNumber}</div>}
+        {(branchDetails?.address || biz.address) && <div style={{ textAlign: "center", fontSize: "9px" }}>{branchDetails?.address || biz.address}</div>}
+        {(branchDetails?.phone || biz.phone) && <div style={{ textAlign: "center", fontSize: "9px" }}>Ph: {branchDetails?.phone || biz.phone}</div>}
+        {(branchDetails?.gst_number || biz.gstNumber) && <div style={{ textAlign: "center", fontSize: "9px" }}>GSTIN: {branchDetails?.gst_number || biz.gstNumber}</div>}
+        {(branchDetails?.fssai_number || biz.fssaiNumber) && <div style={{ textAlign: "center", fontSize: "9px" }}>FSSAI: {branchDetails?.fssai_number || biz.fssaiNumber}</div>}
+        {(branchDetails?.drug_license || biz.dlNumber) && <div style={{ textAlign: "center", fontSize: "9px" }}>DL: {branchDetails?.drug_license || biz.dlNumber}</div>}
         
         <div style={{ textAlign: "center", fontSize: "10px", marginTop: "4px", marginBottom: "4px" }}>
           Tax Invoice
@@ -148,8 +149,8 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
 
         <div style={{ borderTop: "1px dashed #000", margin: "6px 0" }} />
 
-        <div style={{ textAlign: "center", fontSize: "10px", marginTop: "6px" }}>
-          {biz.tagline || "Thank you! Visit again."}
+        <div style={{ textAlign: "center", fontSize: "10px", marginTop: "6px", whiteSpace: "pre-line" }}>
+          {branchDetails?.receipt_footer || branchDetails?.tagline || biz.tagline || "Thank you! Visit again."}
         </div>
       </div>
     );

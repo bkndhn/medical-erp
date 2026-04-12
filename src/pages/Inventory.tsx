@@ -37,8 +37,9 @@ const emptyItem: Partial<Item> = {
 };
 
 export default function Inventory() {
-  const { tenantId, hasRole } = useAuth();
+  const { tenantId, hasRole, activeBranchId, allBranches } = useAuth();
   const isAdmin = hasRole("super_admin") || hasRole("admin");
+  const activeBranchName = activeBranchId ? allBranches.find(b => b.id === activeBranchId)?.name : null;
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -65,6 +66,12 @@ export default function Inventory() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [itemBatches, setItemBatches] = useState<Record<string, any[]>>({});
 
+  // Add Batch modal
+  const [showAddBatch, setShowAddBatch] = useState(false);
+  const [addBatchItem, setAddBatchItem] = useState<Item | null>(null);
+  const [addBatchForm, setAddBatchForm] = useState({ batch_number: "", expiry_date: "", quantity: 0, purchase_price: 0, selling_price: 0, mrp: 0 });
+  const [savingBatch, setSavingBatch] = useState(false);
+
   // Excel import state
   const [showImport, setShowImport] = useState(false);
   const [importData, setImportData] = useState<Record<string, any>[]>([]);
@@ -77,8 +84,10 @@ export default function Inventory() {
   const fetchData = async () => {
     if (!tenantId) return;
     setLoading(true);
+    let itemsQ = supabase.from("items").select("*").eq("tenant_id", tenantId).order("name");
+    if (activeBranchId) itemsQ = itemsQ.eq("branch_id", activeBranchId);
     const [{ data }, { data: t }, { data: cats }, { data: sups }] = await Promise.all([
-      supabase.from("items").select("*").eq("tenant_id", tenantId).order("name"),
+      itemsQ,
       supabase.from("tenants").select("industry, max_items").eq("id", tenantId).single(),
       supabase.from("categories").select("*").eq("tenant_id", tenantId).order("sort_order"),
       supabase.from("suppliers").select("id, name").eq("tenant_id", tenantId),
@@ -90,7 +99,7 @@ export default function Inventory() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, [tenantId]);
+  useEffect(() => { fetchData(); }, [tenantId, activeBranchId]);
 
   const industry = tenant?.industry || "grocery";
   const isMedical = industry === "medical";
@@ -174,7 +183,7 @@ export default function Inventory() {
         if (isTextile && sizeVariants.length > 0) {
           for (const variant of sizeVariants) {
             const { data: insertedItem, error } = await supabase.from("items").insert({
-              ...editItem, tenant_id: tenantId,
+              ...editItem, tenant_id: tenantId, branch_id: activeBranchId || null,
               name: `${editItem.name} - ${variant.size}`,
               size: variant.size, stock: variant.stock, price: variant.price, mrp: variant.price,
             } as any).select().single();
@@ -182,7 +191,7 @@ export default function Inventory() {
             // Create opening batch
             if (insertedItem && variant.stock > 0) {
               await supabase.from("item_batches").insert({
-                tenant_id: tenantId, item_id: insertedItem.id,
+                tenant_id: tenantId, item_id: insertedItem.id, branch_id: activeBranchId || null,
                 batch_number: editItem.batch_number || "OPENING",
                 expiry_date: editItem.expiry_date || null,
                 purchase_price: editItem.cost_price || 0,
@@ -193,13 +202,13 @@ export default function Inventory() {
           }
           toast.success(`${sizeVariants.length} size variants created`);
         } else {
-          const { data: insertedItem, error } = await supabase.from("items").insert({ ...editItem, tenant_id: tenantId } as any).select().single();
+          const { data: insertedItem, error } = await supabase.from("items").insert({ ...editItem, tenant_id: tenantId, branch_id: activeBranchId || null } as any).select().single();
           if (error) throw error;
           
           // Create opening batch
           if (insertedItem && (editItem.stock || 0) > 0) {
             await supabase.from("item_batches").insert({
-              tenant_id: tenantId, item_id: insertedItem.id,
+              tenant_id: tenantId, item_id: insertedItem.id, branch_id: activeBranchId || null,
               batch_number: editItem.batch_number || "OPENING",
               expiry_date: editItem.expiry_date || null,
               purchase_price: editItem.cost_price || 0,
@@ -276,6 +285,46 @@ export default function Inventory() {
     const { error } = await supabase.from("categories").delete().eq("id", id);
     if (error) toast.error(error.message);
     else { toast.success("Category deleted"); fetchData(); }
+  };
+
+  /** Add Batch to existing item */
+  const openAddBatch = (item: Item) => {
+    setAddBatchItem(item);
+    setAddBatchForm({ batch_number: "", expiry_date: "", quantity: 0, purchase_price: item.cost_price || 0, selling_price: item.price || 0, mrp: item.mrp || 0 });
+    setShowAddBatch(true);
+  };
+
+  const saveAddBatch = async () => {
+    if (!addBatchItem || !tenantId) return;
+    if (!addBatchForm.quantity || addBatchForm.quantity <= 0) { toast.error("Quantity must be > 0"); return; }
+    setSavingBatch(true);
+    try {
+      // Insert batch
+      const { error: bErr } = await supabase.from("item_batches").insert({
+        tenant_id: tenantId,
+        item_id: addBatchItem.id,
+        branch_id: activeBranchId || null,
+        batch_number: addBatchForm.batch_number || null,
+        expiry_date: addBatchForm.expiry_date || null,
+        purchase_price: addBatchForm.purchase_price || 0,
+        selling_price: addBatchForm.selling_price || 0,
+        mrp: addBatchForm.mrp || 0,
+        quantity_in: addBatchForm.quantity,
+      } as any);
+      if (bErr) throw bErr;
+
+      // Update item stock
+      await supabase.from("items").update({ stock: addBatchItem.stock + addBatchForm.quantity } as any).eq("id", addBatchItem.id);
+
+      toast.success(`✅ Batch added! +${addBatchForm.quantity} units to ${addBatchItem.name}`);
+      setShowAddBatch(false);
+      setAddBatchItem(null);
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSavingBatch(false);
+    }
   };
 
   const addSizeVariant = () => setSizeVariants(prev => [...prev, { size: "", stock: 0, price: editItem?.price || 0 }]);
@@ -530,6 +579,7 @@ export default function Inventory() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openAddBatch(item)} className="p-1.5 rounded bg-primary/10 text-primary hover:bg-primary hover:text-white touch-manipulation" title="Add Batch"><Plus className="h-4 w-4" /></button>
                       <button onClick={() => openEdit(item)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation"><Edit2 className="h-4 w-4" /></button>
                       <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-4 w-4" /></button>
                     </div>
@@ -614,6 +664,7 @@ export default function Inventory() {
                       </td>
                       <td className="py-3 px-3 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openAddBatch(item)} className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary hover:text-white text-xs font-medium touch-manipulation transition-colors"><Plus className="h-3 w-3" /> Batch</button>
                           <button onClick={() => openEdit(item)} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground touch-manipulation"><Edit2 className="h-3.5 w-3.5" /></button>
                           <button onClick={() => handleDelete(item.id)} className="p-1.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive touch-manipulation"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
@@ -722,6 +773,86 @@ export default function Inventory() {
               )}
               <button onClick={() => setShowCategoryForm(false)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium">Cancel</button>
               <button onClick={handleSaveCategory} disabled={savingCategory || !editCategory.name} className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">{savingCategory ? "Saving..." : "Save"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Batch Modal */}
+      {showAddBatch && addBatchItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowAddBatch(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-md mx-4 animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                <Plus className="h-5 w-5 text-primary" /> Add Batch
+              </h3>
+              <button onClick={() => setShowAddBatch(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            
+            <div className="mb-4 p-3 bg-muted/50 rounded-lg border border-border">
+              <p className="text-sm font-semibold text-foreground">{addBatchItem.name}</p>
+              <div className="flex gap-4 mt-1">
+                <span className="text-xs text-muted-foreground">Current Stock: <strong className="text-foreground">{addBatchItem.stock}</strong></span>
+                <span className="text-xs text-muted-foreground">Unit: {addBatchItem.unit || "pcs"}</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Quantity Added *</label>
+                <input type="number" min="1" value={addBatchForm.quantity || ""} onChange={e => setAddBatchForm({ ...addBatchForm, quantity: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+              </div>
+              
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Batch Number</label>
+                <input type="text" value={addBatchForm.batch_number || ""} onChange={e => setAddBatchForm({ ...addBatchForm, batch_number: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+              </div>
+              
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Expiry Date</label>
+                <input type="date" value={addBatchForm.expiry_date || ""} onChange={e => setAddBatchForm({ ...addBatchForm, expiry_date: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+              </div>
+              
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Purchase Price</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                  <input type="number" value={addBatchForm.purchase_price || ""} onChange={e => setAddBatchForm({ ...addBatchForm, purchase_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full pl-7 pr-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Selling Price</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                  <input type="number" value={addBatchForm.selling_price || ""} onChange={e => setAddBatchForm({ ...addBatchForm, selling_price: parseFloat(e.target.value) || 0 })}
+                    className="w-full pl-7 pr-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                </div>
+              </div>
+              
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">MRP</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">₹</span>
+                  <input type="number" value={addBatchForm.mrp || ""} onChange={e => setAddBatchForm({ ...addBatchForm, mrp: parseFloat(e.target.value) || 0 })}
+                    className="w-full pl-7 pr-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowAddBatch(false)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium">Cancel</button>
+              <button 
+                onClick={saveAddBatch} 
+                disabled={savingBatch || !addBatchForm.quantity || addBatchForm.quantity <= 0} 
+                className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {savingBatch ? "Saving..." : <><Save className="h-4 w-4" /> Save Batch</>}
+              </button>
             </div>
           </div>
         </div>

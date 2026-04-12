@@ -5,7 +5,8 @@ import {
   LayoutDashboard, ShoppingCart, Package, Users, FileText,
   Settings, Truck, CreditCard, Building2,
   Monitor, ChevronLeft, ChevronRight, Zap, Clock,
-  BarChart3, Wallet, MessageSquare, LogOut, Shield, Menu, X, UserCog, ClipboardList
+  BarChart3, Wallet, MessageSquare, LogOut, Shield, Menu, X, UserCog, ClipboardList,
+  ChevronDown, GitBranch
 } from "lucide-react";
 
 const allNav = [
@@ -35,9 +36,10 @@ const allNav = [
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [branchDropOpen, setBranchDropOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut, getPageAccess } = useAuth();
+  const { profile, signOut, getPageAccess, allBranches, activeBranchId, setActiveBranchId, isMultiBranchAdmin } = useAuth();
 
   const allowedPages = getPageAccess();
   const visibleNav = allNav.filter(n => allowedPages.includes(n.page));
@@ -47,6 +49,15 @@ export function AppSidebar() {
   const handleNav = (url: string) => {
     navigate(url);
     setMobileOpen(false);
+  };
+
+  const activeBranchName = activeBranchId
+    ? allBranches.find(b => b.id === activeBranchId)?.name ?? "Branch"
+    : allBranches.length > 0 ? "All Branches" : null;
+
+  const handleBranchSelect = (id: string | null) => {
+    setActiveBranchId(id);
+    setBranchDropOpen(false);
   };
 
   const renderNavItem = (item: typeof allNav[0]) => (
@@ -90,6 +101,59 @@ export function AppSidebar() {
           <X className="h-5 w-5" />
         </button>
       </div>
+
+      {/* Branch Switcher — visible to admins when not collapsed */}
+      {isMultiBranchAdmin && !collapsed && allBranches.length > 0 && (
+        <div className="px-3 py-2 border-b border-sidebar-border">
+          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-1 flex items-center gap-1">
+            <GitBranch className="h-2.5 w-2.5" /> Active Branch
+          </p>
+          <div className="relative">
+            <button
+              onClick={() => setBranchDropOpen(prev => !prev)}
+              className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-muted/60 hover:bg-muted border border-border/50 text-xs font-medium text-foreground transition-colors"
+            >
+              <span className="truncate flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                {activeBranchName ?? "Select Branch"}
+              </span>
+              <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${branchDropOpen ? "rotate-180" : ""}`} />
+            </button>
+            {branchDropOpen && (
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+                {/* All branches option (admin only) */}
+                <button
+                  onClick={() => handleBranchSelect(null)}
+                  className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors flex items-center gap-2 ${activeBranchId === null ? "text-primary font-semibold bg-primary/5" : "text-foreground"}`}
+                >
+                  <Building2 className="h-3 w-3 shrink-0" /> All Branches
+                </button>
+                {allBranches.map(b => (
+                  <button
+                    key={b.id}
+                    onClick={() => handleBranchSelect(b.id)}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors flex items-center gap-2 ${activeBranchId === b.id ? "text-primary font-semibold bg-primary/5" : "text-foreground"}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${activeBranchId === b.id ? "bg-primary" : "bg-muted-foreground/40"}`} />
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Non-admin branch label */}
+      {!isMultiBranchAdmin && !collapsed && profile?.branch_id && (
+        <div className="px-3 py-2 border-b border-sidebar-border">
+          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-1">Branch</p>
+          <span className="text-xs text-foreground font-medium flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
+            {activeBranchName ?? "—"}
+          </span>
+        </div>
+      )}
 
       <nav className="flex-1 overflow-y-auto scrollbar-thin px-2 py-4">
         {sections.map(s => (

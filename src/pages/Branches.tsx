@@ -12,18 +12,21 @@ export default function Branches() {
   const [form, setForm] = useState<any>({ name: "", code: "", address: "", phone: "", email: "", gst_number: "" });
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [maxBranches, setMaxBranches] = useState<number>(1);
   const [branchStats, setBranchStats] = useState<Record<string, { users: number; devices: number; items: number }>>({});
 
   const fetch_ = async () => {
     if (!tenantId) return;
     setLoading(true);
-    const [{ data: b }, { data: profiles }, { data: devices }, { data: items }] = await Promise.all([
+    const [{ data: b }, { data: profiles }, { data: devices }, { data: items }, { data: tenant }] = await Promise.all([
       supabase.from("branches").select("*").eq("tenant_id", tenantId).order("name"),
       supabase.from("profiles").select("branch_id").eq("tenant_id", tenantId),
       supabase.from("devices").select("branch_id").eq("tenant_id", tenantId),
       supabase.from("items").select("branch_id").eq("tenant_id", tenantId),
+      supabase.from("tenants").select("max_branches").eq("id", tenantId).single(),
     ]);
     setBranches((b as any) || []);
+    if (tenant?.max_branches) setMaxBranches(tenant.max_branches);
     
     const stats: Record<string, { users: number; devices: number; items: number }> = {};
     (b || []).forEach((br: any) => { stats[br.id] = { users: 0, devices: 0, items: 0 }; });
@@ -50,6 +53,7 @@ export default function Branches() {
         const { error } = await supabase.from("branches").update({ name: form.name, code: form.code, address: form.address, phone: form.phone, email: form.email, gst_number: form.gst_number, is_active: form.is_active }).eq("id", form.id);
         if (error) throw error;
       } else {
+        if (branches.length >= maxBranches) throw new Error(`Limit reached: ${maxBranches} branches max`);
         const { error } = await supabase.from("branches").insert({ ...form, tenant_id: tenantId });
         if (error) throw error;
       }
@@ -74,8 +78,11 @@ export default function Branches() {
     <div className="h-screen flex flex-col overflow-hidden pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="ml-10 md:ml-0"><h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Building2 className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Branches</h1><p className="text-sm text-muted-foreground">{branches.length} branches • {branches.filter(b => b.is_active).length} active</p></div>
-          <button onClick={() => { setForm({ name: "", code: "", address: "", phone: "", email: "", gst_number: "", is_active: true }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90"><Plus className="h-4 w-4" /> Add Branch</button>
+          <div className="ml-10 md:ml-0"><h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Building2 className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Branches</h1><p className="text-sm text-muted-foreground">{branches.length} / {maxBranches} branches • {branches.filter(b => b.is_active).length} active</p></div>
+          <button onClick={() => { 
+            if (branches.length >= maxBranches) { toast.error(`Limit of ${maxBranches} branches reached`); return; }
+            setForm({ name: "", code: "", address: "", phone: "", email: "", gst_number: "", is_active: true }); setShowForm(true); 
+          }} className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium touch-manipulation transition-all ${branches.length >= maxBranches ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}><Plus className="h-4 w-4" /> Add Branch</button>
         </div>
         <div className="mt-3 relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

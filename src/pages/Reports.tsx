@@ -14,7 +14,8 @@ const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "
 type Tab = typeof TABS[number];
 
 export default function Reports() {
-  const { tenantId } = useAuth();
+  const { tenantId, activeBranchId, allBranches } = useAuth();
+  const activeBranchName = activeBranchId ? allBranches.find(b => b.id === activeBranchId)?.name : null;
   const [sales, setSales] = useState<any[]>([]);
   const [saleItems, setSaleItems] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
@@ -40,24 +41,38 @@ export default function Reports() {
   useEffect(() => {
     if (!tenantId) return;
     setLoading(true);
+    // Build branch-scoped queries
+    let salesQ = supabase.from("sales").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+    if (activeBranchId) salesQ = salesQ.eq("branch_id", activeBranchId);
+    let itemsQ = supabase.from("items").select("*").eq("tenant_id", tenantId);
+    if (activeBranchId) itemsQ = itemsQ.eq("branch_id", activeBranchId);
+    let expensesQ = supabase.from("expenses").select("*").eq("tenant_id", tenantId);
+    if (activeBranchId) expensesQ = expensesQ.eq("branch_id", activeBranchId);
+    let purchasesQ = supabase.from("purchases").select("*, supplier_id").eq("tenant_id", tenantId);
+    if (activeBranchId) purchasesQ = purchasesQ.eq("branch_id", activeBranchId);
+    let paymentsQ = supabase.from("payments").select("*").eq("tenant_id", tenantId);
+    if (activeBranchId) paymentsQ = paymentsQ.eq("branch_id", activeBranchId);
+    let batchesQ = supabase.from("item_batches").select("*").eq("tenant_id", tenantId).eq("is_active", true);
+    if (activeBranchId) batchesQ = (batchesQ as any).eq("branch_id", activeBranchId);
+
     Promise.all([
-      supabase.from("sales").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+      salesQ,
       supabase.from("sale_items").select("*"),
-      supabase.from("items").select("*").eq("tenant_id", tenantId),
-      supabase.from("expenses").select("*").eq("tenant_id", tenantId),
+      itemsQ,
+      expensesQ,
       supabase.from("suppliers").select("id, name").eq("tenant_id", tenantId),
-      supabase.from("purchases").select("*, supplier_id").eq("tenant_id", tenantId),
+      purchasesQ,
       supabase.from("devices").select("*").eq("tenant_id", tenantId),
       supabase.from("customers").select("id, name, phone").eq("tenant_id", tenantId),
-      supabase.from("payments").select("*").eq("tenant_id", tenantId),
-      supabase.from("item_batches").select("*").eq("tenant_id", tenantId).eq("is_active", true),
+      paymentsQ,
+      batchesQ,
     ]).then(([{ data: s }, { data: si }, { data: i }, { data: e }, { data: sup }, { data: p }, { data: dev }, { data: cust }, { data: pay }, { data: batch }]) => {
       setSales((s as any) || []); setSaleItems((si as any) || []); setItems((i as any) || []);
       setExpenses((e as any) || []); setSuppliers((sup as any) || []); setPurchases((p as any) || []);
       setDevices((dev as any) || []); setCustomers((cust as any) || []); setPaymentRecords((pay as any) || []); 
       setItemBatches((batch as any) || []); setLoading(false);
     });
-  }, [tenantId]);
+  }, [tenantId, activeBranchId]);
 
   const filterByDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -360,13 +375,15 @@ export default function Reports() {
   const printBill = () => {
     if (!selectedBill) return;
     const cust = selectedBill.customer_id ? customerMap[selectedBill.customer_id] : null;
-    printReceipt(selectedBill, billItems, undefined, cust ? { name: cust.name, phone: cust.phone } : undefined);
+    const currentBranchDetails = allBranches.find(b => b.id === selectedBill.branch_id);
+    printReceipt(selectedBill, billItems, undefined, cust ? { name: cust.name, phone: cust.phone } : undefined, currentBranchDetails);
   };
 
   const shareOnWhatsApp = () => {
     if (!selectedBill) return;
     const cust = selectedBill.customer_id ? customerMap[selectedBill.customer_id] : null;
-    const msg = generateWhatsAppText(selectedBill, billItems, cust ? { name: cust.name, phone: cust.phone } : undefined);
+    const currentBranchDetails = allBranches.find(b => b.id === selectedBill.branch_id);
+    const msg = generateWhatsAppText(selectedBill, billItems, cust ? { name: cust.name, phone: cust.phone } : undefined, currentBranchDetails);
     const phone = cust?.phone ? cust.phone.replace(/\D/g, "") : "";
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };
@@ -410,7 +427,10 @@ export default function Reports() {
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
       <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
-        <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2 ml-10 md:ml-0"><BarChart3 className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Reports</h1>
+        <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2 ml-10 md:ml-0">
+          <BarChart3 className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Reports
+          {activeBranchName && <span className="text-sm font-normal text-primary/70 border border-primary/20 bg-primary/5 px-2 py-0.5 rounded-full">📍 {activeBranchName}</span>}
+        </h1>
         <div className="flex gap-1.5 mt-3 overflow-x-auto scrollbar-thin">
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)} className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all capitalize touch-manipulation ${tab === t ? "bg-primary/15 text-primary border border-primary/30" : "bg-muted text-muted-foreground border border-transparent"}`}>

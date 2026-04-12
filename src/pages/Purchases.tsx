@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Truck, Plus, Search, X, Eye, Edit2, Save, Package, Undo2, FileText } from "lucide-react";
+import { Truck, Plus, Search, X, Eye, Edit2, Save, Package, Undo2, FileText, Zap } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 
@@ -16,7 +16,7 @@ interface PurchaseItemWithUnit extends PurchaseItem {
 interface ReturnLine { item_id: string; item_name: string; quantity: number; unit_price: number; total: number; reason: string; }
 
 export default function Purchases() {
-  const { tenantId } = useAuth();
+  const { tenantId, activeBranchId, allBranches } = useAuth();
   const [purchases, setPurchases] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
@@ -42,10 +42,14 @@ export default function Purchases() {
   const fetch_ = async () => {
     if (!tenantId) return;
     setLoading(true);
+    let purchasesQ = supabase.from("purchases").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+    if (activeBranchId) purchasesQ = purchasesQ.eq("branch_id", activeBranchId);
+    let itemsQ = supabase.from("items").select("id, name, cost_price").eq("tenant_id", tenantId).eq("is_active", true);
+    if (activeBranchId) itemsQ = itemsQ.eq("branch_id", activeBranchId);
     const [{ data: p }, { data: s }, { data: it }] = await Promise.all([
-      supabase.from("purchases").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+      purchasesQ,
       supabase.from("suppliers").select("id, name").eq("tenant_id", tenantId),
-      supabase.from("items").select("id, name, cost_price").eq("tenant_id", tenantId).eq("is_active", true),
+      itemsQ,
     ]);
     setPurchases((p as any) || []);
     setSuppliers((s as any) || []);
@@ -53,7 +57,7 @@ export default function Purchases() {
     setLoading(false);
   };
 
-  useEffect(() => { fetch_(); }, [tenantId]);
+  useEffect(() => { fetch_(); }, [tenantId, activeBranchId]);
 
   const addPurchaseItem = () => setPurchaseItems(prev => [...prev, { item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip", batch_number: "", expiry_date: "", selling_price: 0, mrp: 0 }]);
   const removePurchaseItem = (idx: number) => { if (purchaseItems.length <= 1) return; setPurchaseItems(prev => prev.filter((_, i) => i !== idx)); };
@@ -78,12 +82,91 @@ export default function Purchases() {
 
   const subtotal = purchaseItems.reduce((s, pi) => s + pi.total, 0);
 
+  const autoFillLowStock = () => {
+    const itemsToFill = items.filter(it => 
+      (form.supplier_id ? it.supplier_id === form.supplier_id : true) &&
+      (Number(it.stock) <= (it.low_stock_threshold || 10))
+    );
+    if (itemsToFill.length === 0) {
+      toast.error("No low-stock items found for this supplier."); 
+      return;
+    }
+    const newLines = itemsToFill.map(it => {
+      const restockAmt = Math.max(1, (it.low_stock_threshold || 10) * 2 - Number(it.stock));
+      return { 
+        item_id: it.id, item_name: it.name, quantity: restockAmt, 
+        unit_price: Number(it.cost_price)||0, 
+        total: restockAmt * (Number(it.cost_price)||0), 
+        purchase_unit: "strip", batch_number: "", expiry_date: "", 
+        selling_price: Number(it.price) || 0, mrp: Number((it as any).mrp) || 0 
+      };
+    });
+    setPurchaseItems(prev => {
+      const filtered = prev.filter(p => p.item_id !== "" || p.item_name !== "");
+      return [...filtered, ...newLines];
+    });
+    toast.success(`Auto-filled ${newLines.length} low-stock items.`);
+  };
+
+  const autoFillShortages = async () => {
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from("shortage_book")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .eq("status", "pending");
+      if (error || !data || data.length === 0) {
+        toast.error("No pending demands in shortage book.");
+        return;
+      }
+      
+      const newLines: any[] = [];
+      for (const s of data) {
+         const matchingItem = items.find(i => i.name.toLowerCase() === s.item_name.toLowerCase());
+         if (form.supplier_id && matchingItem && matchingItem.supplier_id !== form.supplier_id) continue;
+         if (form.supplier_id && !matchingItem) continue;
+
+         const existingLine = newLines.find(l => matchingItem ? l.item_id === matchingItem.id : l.item_name === s.item_name);
+         if (existingLine) {
+           existingLine.quantity += Number(s.requested_quantity) || 1;
+           existingLine.total = existingLine.quantity * existingLine.unit_price;
+         } else {
+           newLines.push({
+             item_id: matchingItem ? matchingItem.id : "",
+             item_name: s.item_name,
+             quantity: Number(s.requested_quantity) || 1,
+             unit_price: matchingItem ? (Number(matchingItem.cost_price) || 0) : 0,
+             total: (Number(s.requested_quantity) || 1) * (matchingItem ? (Number(matchingItem.cost_price) || 0) : 0),
+             purchase_unit: "strip", batch_number: "", expiry_date: "",
+             selling_price: matchingItem ? (Number(matchingItem.price)||0) : 0, 
+             mrp: matchingItem ? (Number(matchingItem.mrp)||0) : 0
+           });
+         }
+      }
+
+      if (newLines.length === 0) {
+        toast.error("No valid demands for this supplier."); return;
+      }
+
+      setPurchaseItems(prev => {
+        const filtered = prev.filter(p => p.item_id !== "" || p.item_name !== "");
+        return [...filtered, ...newLines];
+      });
+      toast.success(`Auto-filled ${newLines.length} requested items.`);
+    } catch(e:any) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!tenantId || purchaseItems.every(pi => !pi.item_name)) return;
     setSaving(true);
     try {
       const { data: purchase, error } = await supabase.from("purchases").insert({
         tenant_id: tenantId, supplier_id: form.supplier_id || null,
+        branch_id: activeBranchId || null,
         invoice_number: form.invoice_number || `PO-${Date.now().toString(36).toUpperCase()}`,
         subtotal, tax_total: 0, grand_total: subtotal, notes: form.notes, status: form.status as any,
       } as any).select().single();
@@ -114,6 +197,7 @@ export default function Purchases() {
                   tenant_id: tenantId,
                   item_id: pi.item_id,
                   purchase_id: purchase.id,
+                  branch_id: activeBranchId || null,
                   batch_number: pi.batch_number || null,
                   expiry_date: pi.expiry_date || null,
                   purchase_price: pi.unit_price,
@@ -172,6 +256,7 @@ export default function Purchases() {
             tenant_id: tenantId,
             item_id: pi.item_id,
             purchase_id: id,
+            branch_id: activeBranchId || null,
             batch_number: pi.batch_number || null,
             expiry_date: pi.expiry_date || null,
             purchase_price: pi.unit_price,
@@ -278,7 +363,10 @@ export default function Purchases() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="ml-10 md:ml-0">
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Truck className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Purchases</h1>
-            <p className="text-sm text-muted-foreground">{filtered.length} purchase orders</p>
+            <p className="text-sm text-muted-foreground">
+              {filtered.length} purchase orders
+              {activeBranchId && <span className="ml-2 text-xs text-primary">📍 {allBranches.find(b => b.id === activeBranchId)?.name}</span>}
+            </p>
           </div>
           <div className="flex gap-2">
             <button onClick={fetchReturns} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-accent/10 text-accent text-sm font-medium hover:bg-accent/20 border border-accent/20 touch-manipulation">
@@ -329,7 +417,14 @@ export default function Purchases() {
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => setShowForm(false)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-2xl mx-4 animate-fade-in max-h-[90vh] overflow-y-auto scrollbar-thin" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-bold text-foreground">New Purchase Order</h3><button onClick={() => setShowForm(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button></div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground">New Purchase Order</h3>
+              <div className="flex items-center gap-2">
+                <button onClick={autoFillLowStock} type="button" className="text-[10px] sm:text-xs px-2 py-1 sm:py-1.5 bg-accent/10 text-accent rounded hover:bg-accent/20 flex items-center gap-1 font-medium transition-colors"><Zap className="h-3 w-3 sm:h-3.5 sm:w-3.5"/> Auto-Fill Low Stock</button>
+                <button onClick={autoFillShortages} disabled={saving} type="button" className="text-[10px] sm:text-xs px-2 py-1 sm:py-1.5 bg-primary/10 text-primary rounded hover:bg-primary/20 flex items-center gap-1 font-medium transition-colors disabled:opacity-50"><FileText className="h-3 w-3 sm:h-3.5 sm:w-3.5"/> Auto-Fill Demands</button>
+                <button onClick={() => setShowForm(false)} className="p-1 rounded hover:bg-muted ml-1"><X className="h-5 w-5 text-muted-foreground" /></button>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div><label className="text-xs font-medium text-muted-foreground mb-1 block">Supplier</label>
                 <select value={form.supplier_id} onChange={e => setForm({...form, supplier_id: e.target.value})} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">

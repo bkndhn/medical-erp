@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { cacheBranches } from "@/lib/indexedDB";
 
 interface Profile {
   id: string;
@@ -14,6 +15,20 @@ interface Profile {
   is_active: boolean;
 }
 
+export interface Branch {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  gst_number: string | null;
+  drug_license: string | null;
+  fssai_number: string | null;
+  tagline: string | null;
+  receipt_header: string | null;
+  receipt_footer: string | null;
+}
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -21,6 +36,14 @@ interface AuthContextType {
   roles: string[];
   tenantId: string | null;
   branchId: string | null;
+  /** The currently active branch for data scoping. null = all branches (admin only). */
+  activeBranchId: string | null;
+  /** All branches belonging to this tenant. Available to admins. */
+  allBranches: Branch[];
+  /** Switch the active branch (admin/manager only). Pass null to view all. */
+  setActiveBranchId: (id: string | null) => void;
+  /** Whether user can see/switch between multiple branches */
+  isMultiBranchAdmin: boolean;
   loading: boolean;
   tenantActive: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
@@ -39,6 +62,9 @@ const PAGE_PERMISSIONS: Record<string, string[]> = {
   staff: ["dashboard", "inventory", "attendance"],
 };
 
+const BRANCH_ADMIN_ROLES = ["super_admin", "admin", "manager"];
+const ACTIVE_BRANCH_KEY = "erp_active_branch_id";
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -48,6 +74,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [tenantActive, setTenantActive] = useState(true);
+  const [allBranches, setAllBranches] = useState<Branch[]>([]);
+  const [activeBranchId, setActiveBranchIdState] = useState<string | null>(null);
 
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
@@ -86,10 +114,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return r;
   };
 
+  /** Load all branches for the tenant — called after profile is loaded */
+  const fetchBranches = async (tenantId: string, profileData: Profile, userRoles: string[]) => {
+    const isAdmin = userRoles.some(r => BRANCH_ADMIN_ROLES.includes(r));
+    if (!isAdmin) {
+      // Non-admins always use their own branch; no need to fetch all branches
+      setActiveBranchIdState(profileData.branch_id);
+      return;
+    }
+    const { data } = await supabase
+      .from("branches")
+      .select("id, name, address, phone, email, gst_number, drug_license, fssai_number, tagline, receipt_header, receipt_footer")
+      .eq("tenant_id", tenantId)
+      .order("name");
+    setAllBranches((data as Branch[]) || []);
+    
+    // Restore last selected branch from localStorage, fall back to profile branch
+    const saved = localStorage.getItem(ACTIVE_BRANCH_KEY);
+    const branchList = (data as Branch[]) || [];
+    if (saved && (saved === "all" || branchList.some(b => b.id === saved))) {
+      setActiveBranchIdState(saved === "all" ? null : saved);
+    } else {
+      setActiveBranchIdState(profileData.branch_id);
+    }
+    
+    // Sync to local cache
+    cacheBranches(branchList);
+  };
+
   const refreshProfile = async () => {
     if (user) {
-      await fetchProfile(user.id);
-      await fetchRoles(user.id);
+      const profileData = await fetchProfile(user.id);
+      const userRoles = await fetchRoles(user.id);
+      if (profileData?.tenant_id) {
+        await fetchBranches(profileData.tenant_id, profileData, userRoles);
+      }
     }
   };
 
@@ -100,13 +159,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         if (session?.user) {
           setTimeout(async () => {
-            await fetchProfile(session.user.id);
-            await fetchRoles(session.user.id);
+            const profileData = await fetchProfile(session.user.id);
+            const userRoles = await fetchRoles(session.user.id);
+            if (profileData?.tenant_id) {
+              await fetchBranches(profileData.tenant_id, profileData, userRoles);
+            }
             setLoading(false);
           }, 0);
         } else {
           setProfile(null);
           setRoles([]);
+          setAllBranches([]);
+          setActiveBranchIdState(null);
           setLoading(false);
         }
       }
@@ -116,8 +180,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id).then(() => {
-          fetchRoles(session.user.id).then(() => setLoading(false));
+        fetchProfile(session.user.id).then(async (profileData) => {
+          const userRoles = await fetchRoles(session.user.id);
+          if (profileData?.tenant_id) {
+            await fetchBranches(profileData.tenant_id, profileData, userRoles);
+          }
+          setLoading(false);
         });
       } else {
         setLoading(false);
@@ -229,10 +297,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       await supabase.from("active_sessions").delete().eq("user_id", user.id);
     }
+    localStorage.removeItem(ACTIVE_BRANCH_KEY);
     await supabase.auth.signOut();
   };
 
   const hasRole = (role: string) => roles.includes(role);
+
+  const isMultiBranchAdmin = roles.some(r => BRANCH_ADMIN_ROLES.includes(r));
+
+  /** Admin-callable branch switcher. null = view all branches. */
+  const setActiveBranchId = useCallback((id: string | null) => {
+    if (!isMultiBranchAdmin) return; // staff users cannot switch branches
+    setActiveBranchIdState(id);
+    localStorage.setItem(ACTIVE_BRANCH_KEY, id === null ? "all" : id);
+  }, [isMultiBranchAdmin]);
 
   const [customPages, setCustomPages] = useState<string[] | null>(null);
 
@@ -285,6 +363,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roles,
         tenantId: profile?.tenant_id ?? null,
         branchId: profile?.branch_id ?? null,
+        activeBranchId,
+        allBranches,
+        setActiveBranchId,
+        isMultiBranchAdmin,
         loading,
         tenantActive,
         signUp,

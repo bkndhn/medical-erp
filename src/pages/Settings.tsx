@@ -45,7 +45,8 @@ export function saveBusinessDetails(d: BusinessDetails) {
 }
 
 export default function Settings() {
-  const { user, profile, signOut, refreshProfile, tenantId } = useAuth();
+  const { user, profile, signOut, refreshProfile, tenantId, activeBranchId, allBranches } = useAuth();
+  const currentBranch = activeBranchId ? allBranches.find(b => b.id === activeBranchId) : null;
   const [tenant, setTenant] = useState<any>(null);
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
@@ -88,7 +89,7 @@ export default function Settings() {
       supabase.from("tenants").select("*").eq("id", tenantId).single().then(({ data }) => {
         setTenant(data);
         // Auto-fill business details from tenant if empty
-        if (data && !biz.storeName) {
+        if (data && !biz.storeName && !activeBranchId) {
           const newBiz = { ...biz, storeName: data.name || "", gstNumber: data.gst_number || "", phone: data.phone || "", email: data.email || "", address: data.address || "" };
           setBiz(newBiz);
           saveBusinessDetails(newBiz);
@@ -105,6 +106,33 @@ export default function Settings() {
       fetchPaymentMethods();
     }
   }, [tenantId]);
+
+  useEffect(() => {
+    if (currentBranch) {
+        setBiz({
+            ...biz,
+            storeName: currentBranch.name || "",
+            address: currentBranch.address || "",
+            phone: currentBranch.phone || "",
+            email: currentBranch.email || "",
+            gstNumber: currentBranch.gst_number || "",
+            fssaiNumber: currentBranch.fssai_number || "",
+            dlNumber: currentBranch.drug_license || "",
+            tagline: currentBranch.tagline || "",
+            receiptHeader: currentBranch.receipt_header || "",
+            receiptFooter: currentBranch.receipt_footer || "",
+        });
+    } else if (tenant) {
+        setBiz({
+            ...getBusinessDetails(),
+            storeName: tenant.name || "",
+            gstNumber: tenant.gst_number || "",
+            phone: tenant.phone || "",
+            email: tenant.email || "",
+            address: tenant.address || ""
+        });
+    }
+  }, [currentBranch, tenant]);
 
   useEffect(() => { setFullName(profile?.full_name || ""); setPhone(profile?.phone || ""); }, [profile]);
 
@@ -128,14 +156,28 @@ export default function Settings() {
     setSaving(false);
   };
 
-  const handleSaveBiz = () => {
+  const handleSaveBiz = async () => {
     setBizSaving(true);
     saveBusinessDetails(biz);
-    // Also update tenant record if possible
-    if (tenantId) {
-      supabase.from("tenants").update({ name: biz.storeName, gst_number: biz.gstNumber || null, phone: biz.phone || null, email: biz.email || null, address: biz.address || null }).eq("id", tenantId);
+    // Also update tenant record or branch record
+    if (activeBranchId) {
+      await supabase.from("branches").update({
+        name: biz.storeName,
+        address: biz.address || null,
+        phone: biz.phone || null,
+        email: biz.email || null,
+        gst_number: biz.gstNumber || null,
+        fssai_number: biz.fssaiNumber || null,
+        drug_license: biz.dlNumber || null,
+        tagline: biz.tagline || null,
+        receipt_header: biz.receiptHeader || null,
+        receipt_footer: biz.receiptFooter || null
+      }).eq("id", activeBranchId);
+      toast.success("Branch details saved");
+    } else if (tenantId) {
+      await supabase.from("tenants").update({ name: biz.storeName, gst_number: biz.gstNumber || null, phone: biz.phone || null, email: biz.email || null, address: biz.address || null }).eq("id", tenantId);
+      toast.success("Tenant business details saved");
     }
-    toast.success("Business details saved");
     setBizSaving(false);
   };
 
@@ -256,8 +298,11 @@ export default function Settings() {
         {tab === "business" && (
           <div className="space-y-4">
             <div className="glass-card rounded-xl p-5 space-y-4">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Store className="h-4 w-4 text-primary" /> Business Details for Bills</h3>
-              <p className="text-xs text-muted-foreground">These details will appear on printed receipts, invoices and WhatsApp shares. Each business has its own isolated details.</p>
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Store className="h-4 w-4 text-primary" /> 
+                {currentBranch ? `Branch Details: ${currentBranch.name}` : "Business Details for Bills"}
+              </h3>
+              <p className="text-xs text-muted-foreground">{currentBranch ? "These details will appear on printed receipts and WhatsApp shares for this specific branch." : "These details will appear on printed receipts, invoices and WhatsApp shares. Each business has its own isolated details."}</p>
               {[
                 { l: "Store / Business Name *", k: "storeName", ph: "My Store" },
                 { l: "Address", k: "address", ph: "123 Main St, City" },

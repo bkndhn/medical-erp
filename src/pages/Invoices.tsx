@@ -6,7 +6,7 @@ import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateF
 import { printReceipt, generateWhatsAppText } from "@/lib/printService";
 
 export default function Invoices() {
-  const { tenantId } = useAuth();
+  const { tenantId, allBranches } = useAuth();
   const [sales, setSales] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,13 +59,15 @@ export default function Invoices() {
   const printInvoice = () => {
     if (!selectedSale) return;
     const cust = selectedSale.customer_id ? customerMap[selectedSale.customer_id] : null;
-    printReceipt(selectedSale, saleItems, undefined, cust ? { name: cust.name, phone: cust.phone } : undefined);
+    const currentBranchDetails = allBranches.find(b => b.id === selectedSale.branch_id);
+    printReceipt(selectedSale, saleItems, undefined, cust ? { name: cust.name, phone: cust.phone } : undefined, currentBranchDetails);
   };
 
   const shareWhatsApp = () => {
     if (!selectedSale) return;
     const cust = selectedSale.customer_id ? customerMap[selectedSale.customer_id] : null;
-    const msg = generateWhatsAppText(selectedSale, saleItems, cust ? { name: cust.name, phone: cust.phone } : undefined);
+    const currentBranchDetails = allBranches.find(b => b.id === selectedSale.branch_id);
+    const msg = generateWhatsAppText(selectedSale, saleItems, cust ? { name: cust.name, phone: cust.phone } : undefined, currentBranchDetails);
     const phone = cust?.phone ? cust.phone.replace(/\D/g, "") : "";
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };

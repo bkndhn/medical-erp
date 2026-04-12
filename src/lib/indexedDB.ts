@@ -1,6 +1,6 @@
 // IndexedDB offline caching for POS
 const DB_NAME = "pos_offline_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -9,6 +9,7 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains("items")) db.createObjectStore("items", { keyPath: "id" });
       if (!db.objectStoreNames.contains("categories")) db.createObjectStore("categories", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("branches")) db.createObjectStore("branches", { keyPath: "id" });
       if (!db.objectStoreNames.contains("pending_sales")) db.createObjectStore("pending_sales", { keyPath: "localId" });
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
     };
@@ -54,6 +55,25 @@ export async function getCachedCategories(): Promise<any[]> {
   const tx = db.transaction("categories", "readonly");
   return new Promise((resolve, reject) => {
     const req = tx.objectStore("categories").getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function cacheBranches(branches: any[]) {
+  const db = await openDB();
+  const tx = db.transaction("branches", "readwrite");
+  const store = tx.objectStore("branches");
+  store.clear();
+  branches.forEach(b => store.put(b));
+  await new Promise<void>((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); });
+}
+
+export async function getCachedBranches(): Promise<any[]> {
+  const db = await openDB();
+  const tx = db.transaction("branches", "readonly");
+  return new Promise((resolve, reject) => {
+    const req = tx.objectStore("branches").getAll();
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });

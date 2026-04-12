@@ -22,7 +22,8 @@ interface ItemVelocity {
 const VELOCITY_DAYS = 30;
 
 export default function Dashboard() {
-  const { profile, tenantId } = useAuth();
+  const { profile, tenantId, activeBranchId, allBranches } = useAuth();
+  const activeBranchName = activeBranchId ? allBranches.find(b => b.id === activeBranchId)?.name : null;
   const [stats, setStats] = useState({ totalSales: 0, totalOrders: 0, avgOrder: 0, lowStock: 0, totalInventoryValue: 0, totalCostValue: 0 });
   const [recentSales, setRecentSales] = useState<any[]>([]);
   const [lowStockItems, setLowStockItems] = useState<LowStockItem[]>([]);
@@ -44,6 +45,7 @@ export default function Dashboard() {
     const since30 = new Date(); since30.setDate(since30.getDate() - VELOCITY_DAYS);
 
     let salesQuery = supabase.from("sales").select("grand_total, created_at, invoice_number, payment_mode, status, cost_total").eq("tenant_id", tenantId).order("created_at", { ascending: false });
+    if (activeBranchId) salesQuery = salesQuery.eq("branch_id", activeBranchId);
     if (dateFrom) salesQuery = salesQuery.gte("created_at", dateFrom.toISOString());
     if (dateTo) salesQuery = salesQuery.lte("created_at", dateTo.toISOString());
 
@@ -51,9 +53,12 @@ export default function Dashboard() {
     if (dateFrom) siQuery = siQuery.gte("created_at", dateFrom.toISOString());
     if (dateTo) siQuery = siQuery.lte("created_at", dateTo.toISOString());
 
+    let itemsQuery = supabase.from("items").select("id, name, stock, low_stock_threshold, price, cost_price, unit").eq("tenant_id", tenantId).eq("is_active", true);
+    if (activeBranchId) itemsQuery = itemsQuery.eq("branch_id", activeBranchId);
+
     Promise.all([
       salesQuery,
-      supabase.from("items").select("id, name, stock, low_stock_threshold, price, cost_price, unit").eq("tenant_id", tenantId).eq("is_active", true),
+      itemsQuery,
       siQuery,
     ]).then(([{ data: sales }, { data: items }, { data: saleItems }]) => {
       const s = (sales as any) || [];
@@ -173,7 +178,7 @@ export default function Dashboard() {
       }).subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [tenantId, dateFrom, dateTo]);
+  }, [tenantId, dateFrom, dateTo, activeBranchId]);
 
   const filteredVelocities = itemVelocities.filter(v =>
     activeVelocityFilter === "all" || v.velocity === activeVelocityFilter
@@ -206,7 +211,10 @@ export default function Dashboard() {
         <div className="flex flex-col md:flex-row items-baseline md:items-center justify-between gap-4">
           <div className="ml-10 md:ml-0">
             <h1 className="text-lg sm:text-2xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">Welcome, {profile?.full_name || "User"} • {new Date().toLocaleDateString("en-IN")}</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              Welcome, {profile?.full_name || "User"} • {new Date().toLocaleDateString("en-IN")}
+              {activeBranchName && <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">📍 {activeBranchName}</span>}
+            </p>
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             <DateFilterExport onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }} defaultPreset="today" />
