@@ -130,11 +130,34 @@ export default function Accounting() {
             {categoryData.length > 0 && (
               <div className="glass-card rounded-xl p-5">
                 <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><PieIcon className="h-4 w-4 text-primary" /> Expense Breakdown</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart><Pie data={categoryData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                    {categoryData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie><Tooltip contentStyle={tooltipStyle} /></PieChart>
-                </ResponsiveContainer>
+                <div className="flex flex-col sm:flex-row items-center gap-4">
+                  <div className="w-full sm:w-64 shrink-0">
+                    <ResponsiveContainer width="100%" height={200}>
+                      <PieChart><Pie data={categoryData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={40}>
+                        {categoryData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie><Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`₹${v.toLocaleString()}`, "Amount"]} /></PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {/* Legend — no inline label overflow issues */}
+                  <div className="flex-1 w-full space-y-2">
+                    {categoryData.map((d, i) => {
+                      const total = categoryData.reduce((s, x) => s + x.value, 0);
+                      const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : "0";
+                      return (
+                        <div key={d.name} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                            <span className="text-sm text-foreground capitalize truncate">{d.name}</span>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-sm font-semibold text-foreground">₹{d.value.toLocaleString()}</span>
+                            <span className="text-[10px] text-muted-foreground ml-1.5">{pct}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </div>

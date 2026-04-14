@@ -177,14 +177,14 @@ export default function Transfers() {
       );
       if (tiErr) throw tiErr;
 
-      // 3 & 4. Update stock for each item
+      // 3 & 4. Update stock for each item — scoped to branch_id
       for (const ci of cart) {
-        // ── 3. Deduct from source branch ──────────────────────────────
-        const currentStock = Number(ci.item.stock);
-        const newSourceStock = Math.max(0, currentStock - ci.quantity);
+        // ── 3. Deduct from source branch (scoped to branch so other branches are untouched) ──
+        const newSourceStock = Math.max(0, Number(ci.item.stock) - ci.quantity);
         await supabase.from("items")
           .update({ stock: newSourceStock } as any)
-          .eq("id", ci.item.id);
+          .eq("id", ci.item.id)
+          .eq("branch_id", srcBranch);  // branch-scoped deduction
 
         // ── 4. Add to destination branch ──────────────────────────────
         // Look for matching item in destination branch (by sku if available, else by name+tenant)
@@ -194,14 +194,16 @@ export default function Transfers() {
           .eq("branch_id", toBranchId)
           .eq("is_active", true);
 
-        // Use SKU match if available
         const { data: destItems } = ci.item.sku
           ? await matchQ.eq("sku", ci.item.sku)
           : await matchQ.ilike("name", ci.item.name);
 
+        let destItemId: string | null = null;
+
         if (destItems && destItems.length > 0) {
           // Update existing item in destination
           const destItem = destItems[0];
+          destItemId = destItem.id;
           await supabase.from("items")
             .update({ stock: Number(destItem.stock) + ci.quantity } as any)
             .eq("id", destItem.id);
@@ -214,17 +216,17 @@ export default function Transfers() {
 
           if (srcItemFull) {
             const { id: _ignore, created_at: _ca, updated_at: _ua, ...cloneData } = srcItemFull as any;
-            await supabase.from("items").insert({
+            const { data: newItem } = await supabase.from("items").insert({
               ...cloneData,
               branch_id: toBranchId,
-              stock: ci.quantity,
-            } as any);
+              stock: ci.quantity,  // start at exactly transferred qty
+            } as any).select("id").single();
+            if (newItem) destItemId = newItem.id;
           }
         }
 
-        // Also transfer FEFO batches (optional — move quantity from oldest batch)
-        // We simply update item_batches branch_id proportionally is complex;
-        // Instead we create a transfer batch record in destination
+        // ── FEFO Batch Migration ──────────────────────────────────────
+        // Reduce source batches (FEFO order) and mirror entries in destination
         const { data: srcBatches } = await supabase.from("item_batches")
           .select("*")
           .eq("item_id", ci.item.id)
@@ -238,10 +240,42 @@ export default function Transfers() {
           for (const batch of srcBatches) {
             if (remaining <= 0) break;
             const take = Math.min(remaining, Number(batch.quantity_remaining));
-            // Reduce source batch quantity_in (triggers qty_remaining recalculation)
+
+            // Reduce source batch: decrement quantity_in so quantity_remaining drops
             await supabase.from("item_batches")
               .update({ quantity_in: Math.max(0, Number(batch.quantity_in) - take) } as any)
               .eq("id", batch.id);
+
+            // Create mirrored batch at destination so FEFO works there too
+            if (destItemId) {
+              // Find existing matching batch at destination (same batch_number)
+              const { data: destBatch } = await supabase.from("item_batches")
+                .select("id, quantity_in")
+                .eq("item_id", destItemId)
+                .eq("tenant_id", tenantId)
+                .eq("is_active", true)
+                .eq("batch_number", batch.batch_number || "TRANSFER")
+                .maybeSingle();
+
+              if (destBatch) {
+                // Increment existing destination batch
+                await supabase.from("item_batches")
+                  .update({ quantity_in: Number(destBatch.quantity_in) + take } as any)
+                  .eq("id", destBatch.id);
+              } else {
+                // Create new batch at destination
+                const { id: _bId, created_at: _bCa, ...batchClone } = batch as any;
+                await supabase.from("item_batches").insert({
+                  ...batchClone,
+                  item_id: destItemId,
+                  branch_id: toBranchId,
+                  quantity_in: take,
+                  quantity_sold: 0,
+                  quantity_returned: 0,
+                } as any);
+              }
+            }
+
             remaining -= take;
           }
         }
@@ -263,6 +297,7 @@ export default function Transfers() {
       setSaving(false);
     }
   };
+
 
   const srcBranchName = branches.find(b => b.id === (isMultiBranchAdmin ? fromBranchId : effectiveFromBranch))?.name;
 

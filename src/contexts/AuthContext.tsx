@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode, useC
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { cacheBranches } from "@/lib/indexedDB";
+import { cacheBranches, cacheBranchDetails } from "@/lib/indexedDB";
 
 interface Profile {
   id: string;
@@ -138,8 +138,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveBranchIdState(profileData.branch_id);
     }
     
-    // Sync to local cache
+    // Sync to local cache (branches list + individual encrypted detail records)
     cacheBranches(branchList);
+    branchList.forEach(b => cacheBranchDetails(b.id, b, tenantId));
   };
 
   const refreshProfile = async () => {

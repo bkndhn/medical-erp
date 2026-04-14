@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { usePOSShortcuts } from "@/hooks/usePOSShortcuts";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { toast } from "sonner";
-import { cacheItems, getCachedItems, cacheCategories, getCachedCategories, savePendingSale, getPendingSales, clearPendingSale } from "@/lib/indexedDB";
+import { cacheItems, getCachedItems, cacheCategories, getCachedCategories, savePendingSale, getPendingSales, clearPendingSale, getCachedBranchDetails } from "@/lib/indexedDB";
 import { getPrinterConfig, printReceipt } from "@/lib/printService";
 import { useReactToPrint } from "react-to-print";
 import { Receipt } from "@/components/Receipt";
@@ -127,11 +127,7 @@ export default function POS() {
   const [pendingItemForBatch, setPendingItemForBatch] = useState<{ item: Item, loose: boolean } | null>(null);
 
   // Returns State
-  const [showReturns, setShowReturns] = useState(false);
-  const [returnInvoiceNo, setReturnInvoiceNo] = useState("");
-  const [returnLoading, setReturnLoading] = useState(false);
-  const [saleToReturn, setSaleToReturn] = useState<any>(null);
-  const [returnLines, setReturnLines] = useState<any[]>([]);
+  const [returnRefundMode, setReturnRefundMode] = useState<string>("cash");
 
   const handleReactPrint = useReactToPrint({
     contentRef: receiptRef,
@@ -700,50 +696,32 @@ export default function POS() {
     }
   };
 
-  const handleFetchInvoiceForReturn = async () => {
-    if (!returnInvoiceNo || !tenantId) return;
-    setReturnLoading(true);
-    try {
-      const { data: sale, error } = await supabase.from("sales").select("*, sale_items(*)").eq("invoice_number", returnInvoiceNo).eq("tenant_id", tenantId).single();
-      if (error) throw error;
-      setSaleToReturn(sale);
-      setReturnLines(sale.sale_items.map((si: any) => ({ ...si, returnQty: 0 })));
-    } catch (err: any) { toast.error("Invoice not found"); }
-    finally { setReturnLoading(false); }
-  };
-
-  const processReturn = async () => {
-    if (!saleToReturn || returnLines.every(l => l.returnQty <= 0)) return;
-    setReturnLoading(true);
-    try {
-      const returnTotal = returnLines.reduce((s, l) => s + (l.returnQty * (Number(l.unit_price) || 0)), 0);
-      const { data: retSale, error: sErr } = await supabase.from("sales").insert({
-        tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
-        invoice_number: `RET-${saleToReturn.invoice_number}-${Date.now().toString(36).toUpperCase()}`,
-        customer_id: saleToReturn.customer_id, customer_name: saleToReturn.customer_name,
-        subtotal: -returnTotal, grand_total: -returnTotal, status: "completed",
-        payment_mode: "cash", amount_paid: -returnTotal,
-      } as any).select().single();
-      if (sErr) throw sErr;
-
-      for (const line of returnLines.filter(l => l.returnQty > 0)) {
-        await supabase.from("sale_items").insert({
-          sale_id: retSale.id, item_id: line.item_id, item_name: `RETURN: ${line.item_name}`,
-          quantity: -line.returnQty, unit_price: line.unit_price, total: -(line.returnQty * line.unit_price),
-        } as any);
-
-        const { data: item } = await supabase.from("items").select("stock").eq("id", line.item_id).single();
-        await supabase.from("items").update({ stock: Number(item.stock) + line.returnQty }).eq("id", line.item_id);
-        
-        if (line.batch_id) {
-          const { data: batch } = await supabase.from("item_batches").select("quantity_remaining").eq("id", line.batch_id).single();
-          if (batch) await supabase.from("item_batches").update({ quantity_remaining: Number(batch.quantity_remaining) + line.returnQty }).eq("id", line.batch_id);
-        }
+  // ─── getBizDetails: reads branch info from IndexedDB first, falls back to localStorage ───
+  const getBizDetails = async (): Promise<Record<string, string>> => {
+    // 1. Try localStorage (set by Settings page)
+    const lsRaw = localStorage.getItem("business_details");
+    if (lsRaw) {
+      try { return JSON.parse(lsRaw); } catch { /* fall through */ }
+    }
+    // 2. Try IndexedDB encrypted branch record (works offline for multi-branch)
+    const bid = activeBranchId || branchId;
+    const tid = tenantId;
+    if (bid && tid) {
+      const cached = await getCachedBranchDetails(bid, tid);
+      if (cached) {
+        // Normalise branch record fields to the shape Settings uses
+        return {
+          storeName: cached.name || "",
+          phone: cached.phone || "",
+          gstNumber: cached.gst_number || "",
+          address: cached.address || "",
+          tagline: cached.tagline || "",
+          drugLicense: cached.drug_license || "",
+          email: cached.email || "",
+        };
       }
-      toast.success("Return processed successfully");
-      setShowReturns(false); setSaleToReturn(null); setReturnInvoiceNo("");
-    } catch (err: any) { toast.error(err.message); }
-    finally { setReturnLoading(false); }
+    }
+    return {};
   };
 
   const autoSaveCustomer = async (saleId: string) => {
@@ -767,9 +745,9 @@ export default function POS() {
     } catch { return null; }
   };
 
-  const shareOnWhatsApp = (sale: any) => {
+  const shareOnWhatsApp = async (sale: any) => {
     if (!customerPhone) return;
-    const biz = JSON.parse(localStorage.getItem("business_details") || "{}");
+    const biz = await getBizDetails();
     const storeName = biz.storeName || "Store";
     const phone = customerPhone.startsWith("+") ? customerPhone.replace(/\D/g, "") : `91${customerPhone.replace(/\D/g, "")}`;
     const itemsText = cart.map(ci => `🔹 ${ci.isLoose ? ci.item.name + " (L)" : ci.item.name} x${ci.quantity} = ₹${ci.total.toFixed(0)}`).join("\n");
@@ -781,6 +759,7 @@ export default function POS() {
     msg += `💰 *Total: ₹${roundedTotal}*\n💳 Payment: ${paymentLines.map(l => `₹${l.amount} ${l.mode.toUpperCase()}`).join(" + ")}\n\n${biz.tagline || "Thank you! 🙏"}`;
     window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
   };
+
 
   // Rx helpers
   const hasScheduleH = useMemo(() => cart.some(ci => ci.item.is_schedule_h), [cart]);
@@ -920,7 +899,7 @@ export default function POS() {
 
     // WhatsApp share
     if (savedWhatsappShare && savedCustomerPhone) {
-      const biz = JSON.parse(localStorage.getItem("business_details") || "{}");
+      const biz = await getBizDetails();
       const storeName = biz.storeName || "Store";
       const phone = savedCustomerPhone.startsWith("+") ? savedCustomerPhone.replace(/\D/g, "") : `91${savedCustomerPhone.replace(/\D/g, "")}`;
       const itemsText = savedCart.map(ci => `🔹 ${ci.isLoose ? ci.item.name + " (L)" : ci.item.name} x${ci.quantity} = ₹${ci.total.toFixed(0)}`).join("\n");
@@ -1115,6 +1094,8 @@ export default function POS() {
     const { data } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
     setReturnItems((data as any) || []);
     setReturnQtys({});
+    // Default refund mode to the original sale's payment mode
+    setReturnRefundMode(sale.payment_mode || "cash");
     setShowReturn(true);
     setShowReprint(false);
   };
@@ -1148,17 +1129,19 @@ export default function POS() {
         }
       }
 
+      // Record return sale with cashier-selected refund mode
       await supabase.from("sales").insert({
         tenant_id: tenantId, branch_id: branchId, cashier_id: user?.id,
-        invoice_number: `RET-${Date.now().toString(36).toUpperCase()}`,
+        invoice_number: `RET-${returnBill.invoice_number}-${Date.now().toString(36).toUpperCase()}`,
         subtotal: refundTotal, discount: 0, tax_total: 0, grand_total: refundTotal,
-        payment_mode: returnBill.payment_mode as any, amount_paid: refundTotal,
+        payment_mode: returnRefundMode as any, amount_paid: refundTotal,
         status: "refunded" as any,
         notes: `Return against ${returnBill.invoice_number}`,
         customer_id: returnBill.customer_id,
+        customer_name: returnBill.customer_name,
       } as any);
 
-      toast.success(`Refund ₹${refundTotal.toFixed(0)} processed. Stock restored.`);
+      toast.success(`Refund ₹${refundTotal.toFixed(0)} via ${returnRefundMode.toUpperCase()} processed. Stock restored.`);
       setShowReturn(false); setReturnBill(null);
 
       const { data: it } = await supabase.from("items").select("*").eq("tenant_id", tenantId).eq("is_active", true).order("name");
@@ -1424,9 +1407,10 @@ export default function POS() {
                         className="w-full text-left"
                       >
                         <p className="text-[13px] font-medium text-foreground line-clamp-2 leading-tight pr-4">{item.name}</p>
-                        <div className="flex items-center gap-1">
+                         <div className="flex items-center gap-1 flex-wrap">
                           <span className="text-xs font-bold text-primary">₹{Number(item.price)}</span>
                           {Number(item.mrp) > Number(item.price) && <span className="text-[10px] text-muted-foreground line-through">₹{Number(item.mrp)}</span>}
+                          {item.unit && <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground font-medium">{item.unit}</span>}
                         </div>
                         <span className={`text-[10px] ${stockColor}`}>{stockLabel}</span>
                         {/* Rack location badge (Feature 3) */}
@@ -1494,6 +1478,7 @@ export default function POS() {
                           <p className="text-[13px] font-medium text-foreground truncate">
                             {ci.item.name}
                             {ci.isLoose && <span className="ml-1 text-[9px] px-0.5 py-0 rounded bg-accent/10 text-accent">L</span>}
+                            {ci.item.unit && !ci.isLoose && <span className="ml-1 text-[9px] px-1 py-0 rounded bg-muted/70 text-muted-foreground font-medium">{ci.item.unit}</span>}
                           </p>
                           <p className="text-[11px] text-muted-foreground">
                             ₹{(ci.loosePrice || Number(ci.item.price)).toFixed(0)} × {ci.quantity}
@@ -1564,6 +1549,13 @@ export default function POS() {
                 <CreditCard className="h-3 w-3" /> Pay
               </button>
             </div>
+            {/* Standalone Customer Return button */}
+            <button
+              onClick={() => { fetchPastBills(); setShowReprint(true); }}
+              className="w-full mt-1.5 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-medium bg-muted/50 text-muted-foreground hover:bg-accent/10 hover:text-accent border border-border/50 hover:border-accent/30 transition-all touch-manipulation"
+            >
+              <RotateCcw className="h-3 w-3" /> Customer Return
+            </button>
           </div>
         </div>
       </div>
@@ -1897,14 +1889,21 @@ export default function POS() {
             <div className="space-y-2 mb-4">
               {returnItems.map(si => (
                 <div key={si.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">{si.item_name}</p>
-                    <p className="text-xs text-muted-foreground">Sold: {si.quantity} × ₹{Number(si.unit_price).toFixed(0)}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{si.item_name}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs text-muted-foreground">Sold: {si.quantity} × ₹{Number(si.unit_price).toFixed(0)}</p>
+                      {si.batch_number && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 font-mono">
+                          Batch: {si.batch_number}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground">Return:</label>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <label className="text-xs text-muted-foreground">Qty:</label>
                     <input type="number" min={0} max={si.quantity} value={returnQtys[si.id] || ""} onChange={e => setReturnQtys(prev => ({ ...prev, [si.id]: Math.min(si.quantity, Math.max(0, parseFloat(e.target.value) || 0)) }))}
-                      className="w-16 px-2 py-1.5 rounded bg-muted border border-border text-sm text-foreground font-mono text-center focus:outline-none focus:ring-1 focus:ring-accent/50" />
+                      className="w-14 px-2 py-1.5 rounded bg-muted border border-border text-sm text-foreground font-mono text-center focus:outline-none focus:ring-1 focus:ring-accent/50" />
                   </div>
                 </div>
               ))}
@@ -1912,8 +1911,23 @@ export default function POS() {
             {(() => {
               const refundAmt = returnItems.reduce((s, si) => s + (Number(si.unit_price) * (returnQtys[si.id] || 0)), 0);
               return refundAmt > 0 ? (
-                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 mb-4">
-                  <div className="flex justify-between text-sm"><span className="text-muted-foreground">Refund</span><span className="text-lg font-bold text-accent">₹{refundAmt.toFixed(0)}</span></div>
+                <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 mb-3">
+                  <div className="flex justify-between items-center text-sm mb-2">
+                    <span className="text-muted-foreground">Refund Amount</span>
+                    <span className="text-xl font-bold text-accent">₹{refundAmt.toFixed(0)}</span>
+                  </div>
+                  {/* Refund Mode Selector */}
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground shrink-0">Refund via:</label>
+                    <div className="flex gap-1 flex-wrap">
+                      {paymentModes.map(m => (
+                        <button key={m.code} onClick={() => setReturnRefundMode(m.code)}
+                          className={`px-2 py-1 rounded text-[10px] font-medium transition-all ${returnRefundMode === m.code ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}>
+                          {m.icon} {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : null;
             })()}
@@ -1924,6 +1938,80 @@ export default function POS() {
           </div>
         </div>
       )}
+
+      {/* ─── Batch Select Modal ─────────────────────────────────────────────── */}
+      {showBatchSelect && batchesForSelection.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm" onClick={() => { setShowBatchSelect(false); setPendingItemForBatch(null); }}>
+          <div className="glass-card rounded-2xl p-5 w-full max-w-md mx-4 animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <div>
+                <h3 className="text-base font-bold text-foreground">Select Batch</h3>
+                <p className="text-xs text-muted-foreground">{pendingItemForBatch?.item.name}</p>
+              </div>
+              <button onClick={() => { setShowBatchSelect(false); setPendingItemForBatch(null); }} className="p-1 rounded hover:bg-muted">
+                <X className="h-5 w-5 text-muted-foreground" />
+              </button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-3 pb-2 border-b border-border">Multiple batches found. Select the batch from the physical box you picked.</p>
+            <div className="space-y-2 max-h-72 overflow-y-auto scrollbar-thin">
+              {batchesForSelection.map((batch, idx) => {
+                const isFefo = idx === 0;
+                const daysLeft = batch.expiry_date
+                  ? Math.ceil((new Date(batch.expiry_date).getTime() - Date.now()) / 86400000)
+                  : null;
+                const expiryColor = daysLeft !== null
+                  ? daysLeft <= 30 ? "text-destructive" : daysLeft <= 90 ? "text-accent" : "text-success"
+                  : "text-muted-foreground";
+                return (
+                  <button key={batch.id} onClick={() => selectSpecificBatch(batch)}
+                    className={`w-full text-left p-3 rounded-xl border transition-all hover:scale-[1.01] touch-manipulation ${
+                      isFefo
+                        ? "bg-success/8 border-success/30 hover:bg-success/15"
+                        : "bg-muted/30 border-border/50 hover:bg-muted/50"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-foreground font-mono">
+                            {batch.batch_number || "No Batch No."}
+                          </span>
+                          {isFefo && (
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-success/20 text-success border border-success/30 font-bold uppercase tracking-wide">
+                              ✓ FEFO Recommended
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-xs">
+                          {batch.expiry_date && (
+                            <span className={`flex items-center gap-1 ${expiryColor}`}>
+                              <Calendar className="h-3 w-3" />
+                              Exp: {new Date(batch.expiry_date).toLocaleDateString("en-IN", { month: "short", year: "numeric" })}
+                              {daysLeft !== null && ` (${daysLeft}d)`}
+                            </span>
+                          )}
+                          <span className="text-muted-foreground">
+                            Stock: {Number(batch.quantity_remaining).toFixed(0)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-base font-bold text-primary">₹{Number(batch.selling_price).toFixed(0)}</p>
+                        <p className="text-[10px] text-muted-foreground">MRP</p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => { setShowBatchSelect(false); setPendingItemForBatch(null); }}
+              className="mt-3 w-full py-2 rounded-lg bg-muted text-muted-foreground text-sm font-medium hover:bg-muted/80">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
 
       <div className="hidden">
         <Receipt 

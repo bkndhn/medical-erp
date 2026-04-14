@@ -207,30 +207,30 @@ export default function Dashboard() {
 
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4">
-        <div className="flex flex-col md:flex-row items-baseline md:items-center justify-between gap-4">
-          <div className="ml-10 md:ml-0">
-            <h1 className="text-lg sm:text-2xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="ml-10 md:ml-0 min-w-0">
+            <h1 className="text-base sm:text-xl font-bold text-foreground leading-tight">Dashboard</h1>
+            <p className="text-[11px] sm:text-sm text-muted-foreground truncate">
               Welcome, {profile?.full_name || "User"} • {new Date().toLocaleDateString("en-IN")}
               {activeBranchName && <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">📍 {activeBranchName}</span>}
             </p>
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <DateFilterExport onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }} defaultPreset="today" />
-            
-            <div className="flex items-center gap-2">
-              {stats.lowStock > 0 && (
-                <button onClick={() => setShowAlerts(true)} className="relative p-2 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all touch-manipulation">
-                  <Bell className="h-5 w-5" />
-                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent text-accent-foreground text-[10px] font-bold flex items-center justify-center animate-pulse">{stats.lowStock}</span>
-                </button>
-              )}
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Online
-              </span>
-            </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {stats.lowStock > 0 && (
+              <button onClick={() => setShowAlerts(true)} className="relative p-2 rounded-lg bg-accent/10 text-accent hover:bg-accent/20 transition-all touch-manipulation">
+                <Bell className="h-4 w-4" />
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent text-accent-foreground text-[9px] font-bold flex items-center justify-center animate-pulse">{stats.lowStock}</span>
+              </button>
+            )}
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-success/10 text-success border border-success/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" /> Online
+            </span>
           </div>
+        </div>
+        {/* Date filter - full-width row below title on mobile */}
+        <div className="mt-2">
+          <DateFilterExport onFilter={(from, to) => { setDateFrom(from); setDateTo(to); }} defaultPreset="today" />
         </div>
       </header>
 
@@ -243,17 +243,17 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {statCards.map((s, i) => (
               <button key={i} onClick={s.onClick}
-                className={`glass-card rounded-xl p-4 animate-fade-in text-left transition-all ${s.onClick ? "cursor-pointer hover:border-primary/30" : "cursor-default"}`}
+                className={`glass-card rounded-xl p-3 sm:p-4 animate-fade-in text-left transition-all ${s.onClick ? "cursor-pointer hover:border-primary/30" : "cursor-default"}`}
                 style={{ animationDelay: `${i * 60}ms` }}
               >
-                <div className="flex items-start justify-between mb-2">
-                  <div className={`p-2 rounded-lg ${s.bg}`}>
-                    <s.icon className={`h-4 w-4 ${s.color}`} />
+                <div className="flex items-start justify-between mb-1.5">
+                  <div className={`p-1.5 rounded-lg ${s.bg}`}>
+                    <s.icon className={`h-3.5 w-3.5 ${s.color}`} />
                   </div>
                   {s.warning && <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />}
                 </div>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{s.label}</p>
-                <p className="text-lg font-bold text-foreground mt-0.5">{s.value}</p>
+                <p className="text-[9px] sm:text-[10px] font-medium text-muted-foreground uppercase tracking-wider leading-tight">{s.label}</p>
+                <p className="text-base sm:text-lg font-bold text-foreground mt-0.5 truncate">{s.value}</p>
               </button>
             ))}
           </div>
@@ -492,8 +492,8 @@ export default function Dashboard() {
               placeholder="Search item..."
               className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground mb-3 focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
-            <div className="overflow-y-auto scrollbar-thin flex-1">
-              <table className="w-full text-xs">
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full text-xs min-w-[500px]">
                 <thead className="sticky top-0 bg-card/95 backdrop-blur-sm">
                   <tr className="border-b border-border/50">
                     <th className="text-left py-2 px-3 font-medium text-muted-foreground">Item</th>
@@ -501,7 +501,7 @@ export default function Dashboard() {
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground">Min</th>
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground hidden sm:table-cell">MRP</th>
                     <th className="text-right py-2 px-3 font-medium text-muted-foreground hidden sm:table-cell">Cost</th>
-                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">Stock Value (Cost)</th>
+                    <th className="text-right py-2 px-3 font-medium text-muted-foreground">Stock Value</th>
                     <th className="text-center py-2 px-3 font-medium text-muted-foreground">Alert</th>
                   </tr>
                 </thead>

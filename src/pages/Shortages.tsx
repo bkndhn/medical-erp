@@ -153,22 +153,26 @@ export default function ShortageBook() {
 
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
-      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="ml-10 md:ml-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground flex items-center gap-2">
-            <ClipboardList className="h-6 w-6 text-primary" /> Shortage Book
-          </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">Track unavailable items and customer demands</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowPOModal(true)} 
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-accent/15 text-accent rounded-lg border border-accent/20 hover:bg-accent/25 transition-all font-medium whitespace-nowrap touch-manipulation">
-            <FileDown className="h-4 w-4" /> Automate PO
-          </button>
-          <button onClick={() => { setFormData({ item_name: "", requested_quantity: "1", priority: "normal", status: "pending" }); setShowForm(true); }} 
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium whitespace-nowrap shadow-lg shadow-primary/20 touch-manipulation">
-            <Plus className="h-4 w-4" /> Log Demand
-          </button>
+      <header className="sticky top-0 z-10 backdrop-blur-xl bg-background/80 border-b border-border px-4 sm:px-6 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="ml-10 md:ml-0 min-w-0">
+            <h1 className="text-base sm:text-xl font-bold text-foreground flex items-center gap-2">
+              <ClipboardList className="h-5 w-5 text-primary shrink-0" /> Shortage Book
+            </h1>
+            <p className="text-[11px] sm:text-sm text-muted-foreground">Track unavailable items and customer demands</p>
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            <button onClick={() => setShowPOModal(true)} 
+              className="flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 bg-accent/15 text-accent rounded-lg border border-accent/20 hover:bg-accent/25 transition-all font-medium touch-manipulation">
+              <FileDown className="h-4 w-4" />
+              <span className="hidden sm:inline whitespace-nowrap">Automate PO</span>
+            </button>
+            <button onClick={() => { setFormData({ item_name: "", requested_quantity: "1", priority: "normal", status: "pending" }); setShowForm(true); }} 
+              className="flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-all font-medium shadow-lg shadow-primary/20 touch-manipulation">
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline whitespace-nowrap">Log Demand</span>
+            </button>
+          </div>
         </div>
       </header>
 
