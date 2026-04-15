@@ -32,6 +32,11 @@ export default function SuperAdmin() {
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [viewTenant, setViewTenant] = useState<Tenant | null>(null);
+  const [showCreateClient, setShowCreateClient] = useState(false);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [clientForm, setClientForm] = useState({
+    businessName: "", industry: "grocery", subscription: "free", branchName: "Main Branch", adminName: "", adminEmail: "", adminPassword: ""
+  });
 
   const isSuperAdmin = hasRole("super_admin");
 
@@ -157,6 +162,69 @@ export default function SuperAdmin() {
     fetchData();
   };
 
+  const handleCreateClient = async () => {
+    if (!clientForm.businessName || !clientForm.adminEmail || !clientForm.adminPassword || !clientForm.adminName) {
+      toast.error("Please fill in all required fields (Business Name, Admin Name, Admin Email, Admin Password)");
+      return;
+    }
+    if (clientForm.adminPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    setCreatingClient(true);
+    try {
+      // 1. Create Tenant
+      const { data: tenant, error: tErr } = await supabase
+        .from("tenants")
+        .insert({ 
+          name: clientForm.businessName, 
+          industry: clientForm.industry as any, 
+          subscription: clientForm.subscription as any,
+          is_active: true 
+        })
+        .select()
+        .single();
+      
+      if (tErr) throw tErr;
+
+      // 2. Create Branch
+      const { data: branch, error: bErr } = await supabase
+        .from("branches")
+        .insert({ tenant_id: tenant.id, name: clientForm.branchName || "Main Branch" })
+        .select()
+        .single();
+        
+      if (bErr) throw bErr;
+
+      // 3. Create Admin User via Edge Function
+      const { data: funcData, error: funcErr } = await supabase.functions.invoke('create-user', {
+        body: {
+          email: clientForm.adminEmail,
+          password: clientForm.adminPassword,
+          fullName: clientForm.adminName,
+          tenantId: tenant.id,
+          role: "admin",
+          branchId: branch.id,
+        }
+      });
+
+      if (funcErr) throw funcErr;
+      if (funcData?.error) throw new Error(funcData.error);
+
+      toast.success(`Business ${clientForm.businessName} and admin user created successfully!`);
+      setShowCreateClient(false);
+      setClientForm({
+        businessName: "", industry: "grocery", subscription: "free", branchName: "Main Branch",
+        adminName: "", adminEmail: "", adminPassword: ""
+      });
+      fetchData();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create client");
+    } finally {
+      setCreatingClient(false);
+    }
+  };
+
   const filtered = tenants.filter(t => {
     const q = searchQuery.toLowerCase();
     return !q || t.name.toLowerCase().includes(q) || t.industry.includes(q) || t.email?.toLowerCase().includes(q) || t.subscription.includes(q);
@@ -196,6 +264,9 @@ export default function SuperAdmin() {
             </h1>
             <p className="text-sm text-muted-foreground">{tenants.length} businesses • {profiles.length} users • ₹{totalRevenue.toLocaleString()} revenue</p>
           </div>
+          <button onClick={() => setShowCreateClient(true)} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
+            <UserPlus className="h-4 w-4" /> Add Business
+          </button>
         </div>
         <div className="flex gap-1.5 mt-3 overflow-x-auto scrollbar-thin">
           {TABS.map(t => (
@@ -491,6 +562,78 @@ export default function SuperAdmin() {
                 disabled={confirmAction.type === "delete" && deleteConfirmText !== "delete permanantly"}
                 className={`flex-1 py-2.5 rounded-lg text-sm font-medium touch-manipulation disabled:opacity-50 ${confirmAction.type === "delete" ? "bg-destructive text-destructive-foreground" : "bg-primary text-primary-foreground"}`}>
                 {confirmAction.type === "delete" ? "Delete Forever" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Client Modal */}
+      {showCreateClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" onClick={() => setShowCreateClient(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto scrollbar-thin animate-fade-in" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-foreground">Add New Business</h3>
+              <button onClick={() => setShowCreateClient(false)} className="p-1 rounded hover:bg-muted"><X className="h-5 w-5 text-muted-foreground" /></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Business Name *</label>
+                  <input type="text" value={clientForm.businessName} onChange={e => setClientForm({ ...clientForm, businessName: e.target.value })} placeholder="Store Name" className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Industry</label>
+                  <select value={clientForm.industry} onChange={e => setClientForm({ ...clientForm, industry: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
+                    <option value="grocery">Grocery</option>
+                    <option value="textile">Textile</option>
+                    <option value="medical">Medical</option>
+                    <option value="fruit">Fruit & Produce</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Plan</label>
+                  <select value={clientForm.subscription} onChange={e => setClientForm({ ...clientForm, subscription: e.target.value })} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50">
+                    <option value="free">Free</option>
+                    <option value="starter">Starter</option>
+                    <option value="business">Business</option>
+                    <option value="enterprise">Enterprise</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Branch Name</label>
+                  <input type="text" value={clientForm.branchName} onChange={e => setClientForm({ ...clientForm, branchName: e.target.value })} placeholder="Main Branch" className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                </div>
+              </div>
+
+              <div className="border-t border-border pt-4 mt-2">
+                <h4 className="text-sm font-semibold text-foreground mb-3">Admin Account</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Full Name *</label>
+                    <input type="text" value={clientForm.adminName} onChange={e => setClientForm({ ...clientForm, adminName: e.target.value })} placeholder="Admin Name" className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Email *</label>
+                    <input type="email" value={clientForm.adminEmail} onChange={e => setClientForm({ ...clientForm, adminEmail: e.target.value })} placeholder="admin@business.com" className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Password *</label>
+                    <input type="text" value={clientForm.adminPassword} onChange={e => setClientForm({ ...clientForm, adminPassword: e.target.value })} placeholder="Min 6 characters" minLength={6} className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setShowCreateClient(false)} className="flex-1 py-2.5 rounded-lg bg-muted text-muted-foreground text-sm font-medium touch-manipulation">Cancel</button>
+              <button 
+                onClick={handleCreateClient} 
+                disabled={creatingClient || !clientForm.businessName || !clientForm.adminEmail || !clientForm.adminPassword || !clientForm.adminName} 
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50 touch-manipulation">
+                <Save className="h-4 w-4" /> {creatingClient ? "Creating..." : "Create Business"}
               </button>
             </div>
           </div>
