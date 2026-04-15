@@ -42,12 +42,19 @@ export default function UserManagement() {
   const fetchData = async () => {
     if (!tenantId) return;
     setLoading(true);
-    const [{ data: profiles }, { data: userRoles }, { data: br }, { data: pageAccess }] = await Promise.all([
+    const [{ data: profiles }, { data: br }, { data: pageAccess }] = await Promise.all([
       supabase.from("profiles").select("*").eq("tenant_id", tenantId),
-      supabase.from("user_roles").select("*"),
       supabase.from("branches").select("id, name").eq("tenant_id", tenantId),
       supabase.from("user_page_access").select("*").eq("tenant_id", tenantId),
     ]);
+
+    // Fetch roles only for users belonging to this tenant
+    const tenantUserIds = (profiles || []).map((p: any) => p.user_id).filter(Boolean);
+    let userRoles: any[] = [];
+    if (tenantUserIds.length > 0) {
+      const { data: rolesData } = await supabase.from("user_roles").select("*").in("user_id", tenantUserIds);
+      userRoles = rolesData || [];
+    }
 
     const usersWithRoles = (profiles || []).map(p => ({
       ...p,

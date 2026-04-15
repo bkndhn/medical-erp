@@ -10,11 +10,11 @@ import { printReceipt, generateWhatsAppText } from "@/lib/printService";
 import * as XLSX from "xlsx";
 
 const COLORS = ["hsl(187 72% 50%)", "hsl(37 95% 55%)", "hsl(152 60% 45%)", "hsl(0 72% 55%)", "hsl(270 60% 55%)", "hsl(210 70% 55%)"];
-const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices", "suppliers", "schedule_h"] as const;
+const TABS = ["overview", "bills", "pnl", "stock", "sales", "gst", "payments", "expiry", "devices", "suppliers", "schedule_h", "branch"] as const;
 type Tab = typeof TABS[number];
 
 export default function Reports() {
-  const { tenantId, activeBranchId, allBranches } = useAuth();
+  const { tenantId, activeBranchId, allBranches, isMultiBranchAdmin } = useAuth();
   const activeBranchName = activeBranchId ? allBranches.find(b => b.id === activeBranchId)?.name : null;
   const [sales, setSales] = useState<any[]>([]);
   const [saleItems, setSaleItems] = useState<any[]>([]);
@@ -412,7 +412,29 @@ export default function Reports() {
   };
 
   const tooltipStyle = { backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--foreground))' };
-  const tabIcons: Record<Tab, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️", suppliers: "🏭", schedule_h: "⚕️" };
+  const tabIcons: Record<string, string> = { overview: "📊", bills: "🧾", pnl: "📈", stock: "📦", sales: "💰", gst: "🧾", payments: "💳", expiry: "📅", devices: "🖥️", suppliers: "🏭", schedule_h: "⚕️", branch: "🏢" };
+
+  // ─── Branch-wise aggregation (all branches, no filter) ───────────────────────
+  const branchWiseReport = useMemo(() => {
+    const map: Record<string, { id: string; name: string; sales: number; orders: number; refunds: number; avgBill: number; expenses: number }> = {};
+    allBranches.forEach(b => {
+      map[b.id] = { id: b.id, name: b.name, sales: 0, orders: 0, refunds: 0, avgBill: 0, expenses: 0 };
+    });
+    // fallback for unrecognised branch ids present in data
+    filteredSales.forEach(s => {
+      const bid = s.branch_id || "unknown";
+      if (!map[bid]) map[bid] = { id: bid, name: "Unknown Branch", sales: 0, orders: 0, refunds: 0, avgBill: 0, expenses: 0 };
+      if (s.status === "completed") { map[bid].sales += Number(s.grand_total); map[bid].orders++; }
+      if (s.status === "refunded") map[bid].refunds += Number(s.grand_total);
+    });
+    filteredExpenses.forEach(e => {
+      const bid = e.branch_id || "unknown";
+      if (!map[bid]) map[bid] = { id: bid, name: "Unknown Branch", sales: 0, orders: 0, refunds: 0, avgBill: 0, expenses: 0 };
+      map[bid].expenses += Number(e.amount);
+    });
+    Object.values(map).forEach(b => { b.avgBill = b.orders > 0 ? b.sales / b.orders : 0; });
+    return Object.values(map).filter(b => b.sales > 0 || b.orders > 0 || b.expenses > 0).sort((a, b) => b.sales - a.sales);
+  }, [filteredSales, filteredExpenses, allBranches]);
 
   const searchedBills = useMemo(() => {
     // Exclude held (temp) and cancelled bills from reports — only show completed/refunded
@@ -990,6 +1012,98 @@ export default function Reports() {
               </div>
               {scheduleHReport.length === 0 && <p className="text-center text-muted-foreground py-12">No Schedule H drugs dispensed in this period</p>}
             </div>
+          </>}
+
+          {/* Branch-wise Report */}
+          {tab === "branch" && <>
+            {!isMultiBranchAdmin ? (
+              <div className="text-center text-muted-foreground py-16">
+                <Building2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                <p className="font-medium">Branch-wise report is available for multi-branch admins only.</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Active Branches</p><p className="text-2xl font-bold text-foreground mt-1">{branchWiseReport.length}</p></div>
+                  <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Combined Sales</p><p className="text-2xl font-bold text-primary mt-1">₹{branchWiseReport.reduce((s, b) => s + b.sales, 0).toLocaleString()}</p></div>
+                  <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Total Orders</p><p className="text-2xl font-bold text-foreground mt-1">{branchWiseReport.reduce((s, b) => s + b.orders, 0)}</p></div>
+                  <div className="glass-card rounded-xl p-5"><p className="text-xs text-muted-foreground uppercase">Combined Expenses</p><p className="text-2xl font-bold text-destructive/80 mt-1">₹{branchWiseReport.reduce((s, b) => s + b.expenses, 0).toLocaleString()}</p></div>
+                </div>
+
+                {activeBranchId && (
+                  <div className="glass-card rounded-xl p-4 bg-primary/5 border border-primary/20">
+                    <p className="text-xs text-primary/70">📍 Currently filtered to <strong>{activeBranchName}</strong>. Switch to "All Branches" in the branch selector (top of app) to see all branches combined.</p>
+                  </div>
+                )}
+
+                <div className="glass-card rounded-xl p-5">
+                  <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Branch Performance Comparison</h3>
+                  <div className="overflow-x-auto -mx-5 px-5">
+                    <table className="w-full text-sm min-w-[700px]">
+                      <thead><tr className="border-b border-border">
+                        <th className="text-left py-2 text-xs text-muted-foreground">Branch</th>
+                        <th className="text-right py-2 text-xs text-muted-foreground">Orders</th>
+                        <th className="text-right py-2 text-xs text-muted-foreground">Sales</th>
+                        <th className="text-right py-2 text-xs text-muted-foreground">Refunds</th>
+                        <th className="text-right py-2 text-xs text-muted-foreground">Expenses</th>
+                        <th className="text-right py-2 text-xs text-muted-foreground">Net</th>
+                        <th className="text-right py-2 text-xs text-muted-foreground">Avg Bill</th>
+                        <th className="text-right py-2 text-xs text-muted-foreground">Share %</th>
+                      </tr></thead>
+                      <tbody>
+                        {branchWiseReport.map((b, i) => {
+                          const totalSalesAll = branchWiseReport.reduce((s, x) => s + x.sales, 0);
+                          const net = b.sales - b.refunds - b.expenses;
+                          return (
+                            <tr key={i} className="border-b border-border/30 hover:bg-muted/20">
+                              <td className="py-3 font-medium text-foreground flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full inline-block" style={{ background: COLORS[i % COLORS.length] }}></span>
+                                {b.name}
+                              </td>
+                              <td className="py-3 text-right text-muted-foreground">{b.orders}</td>
+                              <td className="py-3 text-right font-semibold text-primary">₹{b.sales.toLocaleString()}</td>
+                              <td className="py-3 text-right text-destructive">₹{b.refunds.toLocaleString()}</td>
+                              <td className="py-3 text-right text-muted-foreground">₹{b.expenses.toLocaleString()}</td>
+                              <td className={`py-3 text-right font-semibold ${net >= 0 ? "text-success" : "text-destructive"}`}>₹{net.toLocaleString()}</td>
+                              <td className="py-3 text-right text-muted-foreground">₹{b.avgBill.toFixed(0)}</td>
+                              <td className="py-3 text-right text-accent">{totalSalesAll > 0 ? ((b.sales / totalSalesAll) * 100).toFixed(1) : 0}%</td>
+                            </tr>
+                          );
+                        })}
+                        <tr className="border-t-2 border-border font-bold">
+                          <td className="py-2 text-foreground">TOTAL</td>
+                          <td className="py-2 text-right text-foreground">{branchWiseReport.reduce((s, b) => s + b.orders, 0)}</td>
+                          <td className="py-2 text-right text-primary">₹{branchWiseReport.reduce((s, b) => s + b.sales, 0).toLocaleString()}</td>
+                          <td className="py-2 text-right text-destructive">₹{branchWiseReport.reduce((s, b) => s + b.refunds, 0).toLocaleString()}</td>
+                          <td className="py-2 text-right text-muted-foreground">₹{branchWiseReport.reduce((s, b) => s + b.expenses, 0).toLocaleString()}</td>
+                          <td className={`py-2 text-right ${branchWiseReport.reduce((s, b) => s + b.sales - b.refunds - b.expenses, 0) >= 0 ? "text-success" : "text-destructive"}`}>₹{branchWiseReport.reduce((s, b) => s + b.sales - b.refunds - b.expenses, 0).toLocaleString()}</td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  {branchWiseReport.length === 0 && <p className="text-muted-foreground text-center py-8">No branch data for selected period</p>}
+                </div>
+
+                {branchWiseReport.length > 1 && (
+                  <div className="glass-card rounded-xl p-5">
+                    <h3 className="text-sm font-semibold text-foreground mb-4">Branch Sales Comparison</h3>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={branchWiseReport}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis dataKey="name" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} />
+                        <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }} />
+                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => `₹${value.toFixed(0)}`} />
+                        <Legend />
+                        <Bar dataKey="sales" fill="hsl(152 60% 45%)" name="Sales" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="expenses" fill="hsl(0 72% 55%)" name="Expenses" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="refunds" fill="hsl(37 95% 55%)" name="Refunds" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </>
+            )}
           </>}
 
         </>}

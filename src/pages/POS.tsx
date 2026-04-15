@@ -1120,11 +1120,16 @@ export default function POS() {
           
           if (si.batch_id) {
             // Restore batch stock by decrementing sold quantity
-            await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockAdd }).catch(() => {
-              supabase.from("item_batches").select("quantity_sold").eq("id", si.batch_id).single().then(({ data: b }) => {
-                if (b) supabase.from("item_batches").update({ quantity_sold: Math.max(0, Number(b.quantity_sold) - stockAdd) } as any).eq("id", si.batch_id);
-              });
-            });
+            try {
+              const { error: rpcReturnErr } = await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockAdd });
+              if (rpcReturnErr) throw rpcReturnErr;
+            } catch {
+              // Fallback: manual decrement
+              const { data: batchData } = await supabase.from("item_batches").select("quantity_sold").eq("id", si.batch_id).single();
+              if (batchData) {
+                await supabase.from("item_batches").update({ quantity_sold: Math.max(0, Number(batchData.quantity_sold) - stockAdd) } as any).eq("id", si.batch_id);
+              }
+            }
           }
         }
       }
@@ -1163,11 +1168,16 @@ export default function POS() {
             
             if (si.batch_id) {
               // Restore batch stock by decrementing sold quantity
-              await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockRestored }).catch(() => {
-                supabase.from("item_batches").select("quantity_sold").eq("id", si.batch_id).single().then(({ data: b }) => {
-                  if (b) supabase.from("item_batches").update({ quantity_sold: Math.max(0, Number(b.quantity_sold) - stockRestored) } as any).eq("id", si.batch_id);
-                });
-              });
+              try {
+                const { error: rpcDeleteErr } = await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockRestored });
+                if (rpcDeleteErr) throw rpcDeleteErr;
+              } catch {
+                // Fallback: manual decrement
+                const { data: batchDataDel } = await supabase.from("item_batches").select("quantity_sold").eq("id", si.batch_id).single();
+                if (batchDataDel) {
+                  await supabase.from("item_batches").update({ quantity_sold: Math.max(0, Number(batchDataDel.quantity_sold) - stockRestored) } as any).eq("id", si.batch_id);
+                }
+              }
             }
           }
         }
