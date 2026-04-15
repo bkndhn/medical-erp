@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -14,30 +14,29 @@ import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import POS from "./pages/POS";
 
-// All other pages — lazy loaded for instant navigation
-const Onboarding     = lazy(() => import("./pages/Onboarding"));
-const Dashboard      = lazy(() => import("./pages/Dashboard"));
-const Inventory      = lazy(() => import("./pages/Inventory"));
-const Purchases      = lazy(() => import("./pages/Purchases"));
-const Customers      = lazy(() => import("./pages/Customers"));
-const Suppliers      = lazy(() => import("./pages/Suppliers"));
-const Accounting     = lazy(() => import("./pages/Accounting"));
-const Reports        = lazy(() => import("./pages/Reports"));
-const Invoices       = lazy(() => import("./pages/Invoices"));
-const Branches       = lazy(() => import("./pages/Branches"));
-const Devices        = lazy(() => import("./pages/Devices"));
-const Payments       = lazy(() => import("./pages/Payments"));
-const WhatsApp       = lazy(() => import("./pages/WhatsApp"));
-const Transfers      = lazy(() => import("./pages/Transfers"));
-const SupplierReturns = lazy(() => import("./pages/SupplierReturns"));
-const Shortages      = lazy(() => import("./pages/Shortages"));
-const Settings       = lazy(() => import("./pages/Settings"));
-const SuperAdmin     = lazy(() => import("./pages/SuperAdmin"));
-const UserManagement = lazy(() => import("./pages/UserManagement"));
-const NotFound       = lazy(() => import("./pages/NotFound"));
-const Install        = lazy(() => import("./pages/Install"));
-const Attendance     = lazy(() => import("./pages/Attendance"));
-const CashRegister   = lazy(() => import("./pages/CashRegister"));
+import Onboarding from "./pages/Onboarding";
+import Dashboard from "./pages/Dashboard";
+import Inventory from "./pages/Inventory";
+import Purchases from "./pages/Purchases";
+import Customers from "./pages/Customers";
+import Suppliers from "./pages/Suppliers";
+import Accounting from "./pages/Accounting";
+import Reports from "./pages/Reports";
+import Invoices from "./pages/Invoices";
+import Branches from "./pages/Branches";
+import Devices from "./pages/Devices";
+import Payments from "./pages/Payments";
+import WhatsApp from "./pages/WhatsApp";
+import Transfers from "./pages/Transfers";
+import SupplierReturns from "./pages/SupplierReturns";
+import Shortages from "./pages/Shortages";
+import Settings from "./pages/Settings";
+import SuperAdmin from "./pages/SuperAdmin";
+import UserManagement from "./pages/UserManagement";
+import NotFound from "./pages/NotFound";
+import Install from "./pages/Install";
+import Attendance from "./pages/Attendance";
+import CashRegister from "./pages/CashRegister";
 
 const queryClient = new QueryClient({
   defaultOptions: {

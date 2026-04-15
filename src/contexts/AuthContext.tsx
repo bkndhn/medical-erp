@@ -328,7 +328,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, profile?.tenant_id]);
 
-  const getPageAccess = (): string[] => {
+  const getPageAccess = useCallback((): string[] => {
     // Custom page access overrides role-based access
     if (customPages && customPages.length > 0) return customPages;
     const allPages = new Set<string>();
@@ -340,7 +340,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return PAGE_PERMISSIONS.staff;
     }
     return Array.from(allPages);
-  };
+  }, [customPages, roles, profile?.tenant_id]);
 
   // Heartbeat: update last_active_at every 60 seconds
   const heartbeatRef = useRef<ReturnType<typeof setInterval>>();
@@ -355,29 +355,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { if (heartbeatRef.current) clearInterval(heartbeatRef.current); };
   }, [user]);
 
+  const contextValue = useMemo(() => ({
+    user,
+    session,
+    profile,
+    roles,
+    tenantId: profile?.tenant_id ?? null,
+    branchId: profile?.branch_id ?? null,
+    activeBranchId,
+    allBranches,
+    setActiveBranchId,
+    isMultiBranchAdmin,
+    loading,
+    tenantActive,
+    signUp,
+    signIn,
+    signOut,
+    hasRole,
+    refreshProfile,
+    getPageAccess,
+  }), [
+    user, session, profile, roles, activeBranchId, allBranches,
+    setActiveBranchId, isMultiBranchAdmin, loading, tenantActive, getPageAccess
+  ]);
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        profile,
-        roles,
-        tenantId: profile?.tenant_id ?? null,
-        branchId: profile?.branch_id ?? null,
-        activeBranchId,
-        allBranches,
-        setActiveBranchId,
-        isMultiBranchAdmin,
-        loading,
-        tenantActive,
-        signUp,
-        signIn,
-        signOut,
-        hasRole,
-        refreshProfile,
-        getPageAccess,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
