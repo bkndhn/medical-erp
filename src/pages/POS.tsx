@@ -1000,7 +1000,7 @@ export default function POS() {
       const config = getPrinterConfig();
       if (config.enabled && config.autoPrint) {
         if (config.type === "usb") {
-          printReceipt(sale, itemsWithSaleId, savedCustomerName, { name: savedCustomerName, phone: savedCustomerPhone });
+          printReceipt(sale, itemsWithSaleId, savedCustomerName, { name: savedCustomerName, phone: savedCustomerPhone }, currentBranchDetails);
         } else {
           setLastSaleForPrint({ sale, items: itemsWithSaleId, customerInfo: { name: savedCustomerName, phone: savedCustomerPhone } });
         }
@@ -1081,7 +1081,7 @@ export default function POS() {
     const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", sale.id);
     const config = getPrinterConfig();
     if (config.type === "usb") {
-      printReceipt(sale, items || []);
+      printReceipt(sale, items || [], undefined, undefined, currentBranchDetails);
     } else {
       setLastSaleForPrint({ sale, items: items || [] });
     }
