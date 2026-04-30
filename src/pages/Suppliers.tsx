@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Truck, Plus, Search, Edit2, Trash2, X, Save, Eye, BookOpen, ArrowUpCircle, ArrowDownCircle, Download } from "lucide-react";
+import { Truck, Plus, Search, Edit2, Trash2, X, Save, Eye, BookOpen, ArrowUpCircle, ArrowDownCircle, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
+import BulkImportModal from "@/components/BulkImportModal";
 
 interface Supplier {
   id: string; name: string; phone: string | null; email: string | null;
@@ -35,6 +36,7 @@ export default function Suppliers() {
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [showAddEntry, setShowAddEntry] = useState(false);
   const [entryForm, setEntryForm] = useState({ type: "debit", amount: 0, description: "" });
+  const [showImport, setShowImport] = useState(false);
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -150,9 +152,14 @@ export default function Suppliers() {
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Truck className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Suppliers</h1>
             <p className="text-sm text-muted-foreground">{filtered.length} suppliers • Outstanding: ₹{totalOutstanding.toLocaleString()}</p>
           </div>
-          <button onClick={() => { setEditItem({ name: "", phone: "", email: "", address: "", gst_number: "", outstanding: 0 }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
-            <Plus className="h-4 w-4" /> Add Supplier
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted text-foreground text-sm font-medium hover:bg-muted/80 border border-border">
+              <Upload className="h-4 w-4" /> Import
+            </button>
+            <button onClick={() => { setEditItem({ name: "", phone: "", email: "", address: "", gst_number: "", outstanding: 0 }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
+              <Plus className="h-4 w-4" /> Add Supplier
+            </button>
+          </div>
         </div>
         <div className="mt-3 flex flex-col gap-3">
           <div className="relative max-w-md">
@@ -358,6 +365,38 @@ export default function Suppliers() {
           </div>
         </div>
       )}
+      <BulkImportModal
+        open={showImport}
+        title="Suppliers"
+        onClose={() => setShowImport(false)}
+        fields={[
+          { key: "name", label: "Name", required: true },
+          { key: "phone", label: "Phone" },
+          { key: "email", label: "Email" },
+          { key: "address", label: "Address" },
+          { key: "gst_number", label: "GST Number" },
+          { key: "outstanding", label: "Opening Outstanding", type: "number" },
+        ]}
+        templateRows={[
+          { Name: "Acme Distributors", Phone: "9876543210", Email: "info@acme.com", Address: "123 Industrial", "GST Number": "29AABCU9603R1ZM", "Opening Outstanding": 0 },
+        ]}
+        onImport={async rows => {
+          if (!tenantId) return { inserted: 0, errors: [] };
+          const payload = rows.map(r => ({ ...r, tenant_id: tenantId }));
+          const errors: { row: number; message: string }[] = [];
+          let inserted = 0;
+          const chunks: any[][] = [];
+          for (let i = 0; i < payload.length; i += 100) chunks.push(payload.slice(i, i + 100));
+          for (let ci = 0; ci < chunks.length; ci++) {
+            const { error, data } = await supabase.from("suppliers").insert(chunks[ci]).select("id");
+            if (error) errors.push({ row: ci * 100 + 1, message: error.message });
+            else inserted += data?.length || 0;
+          }
+          fetch_();
+          toast.success(`Imported ${inserted} suppliers`);
+          return { inserted, errors };
+        }}
+      />
     </div>
   );
 }
