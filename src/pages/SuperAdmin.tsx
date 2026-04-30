@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Shield, Building2, Pause, Play, Trash2, Users, Search, CreditCard, Settings, Save,
-  Eye, AlertTriangle, Activity, UserPlus, BarChart3, Globe, Lock
+  Eye, AlertTriangle, Activity, UserPlus, BarChart3, Globe, Lock, X
 } from "lucide-react";
 import { toast } from "sonner";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
