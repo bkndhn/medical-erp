@@ -323,6 +323,38 @@ export default function Customers() {
         </div>
       )}
 
+      <BulkImportModal
+        open={showImport}
+        title="Customers"
+        onClose={() => setShowImport(false)}
+        fields={[
+          { key: "name", label: "Name", required: true },
+          { key: "phone", label: "Phone" },
+          { key: "email", label: "Email", validate: v => /\S+@\S+\.\S+/.test(String(v)) ? null : "Invalid email" },
+          { key: "address", label: "Address" },
+        ]}
+        templateRows={[
+          { Name: "John Doe", Phone: "9876543210", Email: "john@example.com", Address: "123 Main St" },
+        ]}
+        onImport={async rows => {
+          if (!tenantId) return { inserted: 0, errors: [] };
+          const payload = rows.map(r => ({ ...r, tenant_id: tenantId }));
+          const errors: { row: number; message: string }[] = [];
+          let inserted = 0;
+          // chunk insert for safety
+          const chunks: any[][] = [];
+          for (let i = 0; i < payload.length; i += 100) chunks.push(payload.slice(i, i + 100));
+          for (let ci = 0; ci < chunks.length; ci++) {
+            const { error, data } = await supabase.from("customers").insert(chunks[ci]).select("id");
+            if (error) errors.push({ row: ci * 100 + 1, message: error.message });
+            else inserted += data?.length || 0;
+          }
+          fetch_();
+          toast.success(`Imported ${inserted} customers`);
+          return { inserted, errors };
+        }}
+      />
+
     </div>
   );
 }
