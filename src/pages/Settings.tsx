@@ -468,6 +468,50 @@ export default function Settings() {
           </div>
         )}
 
+        {tab === "zreport" && (
+          <div className="space-y-4">
+            <div className="glass-card rounded-xl p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Mail className="h-4 w-4 text-primary" /> Daily Z-Report Email</h3>
+              <p className="text-xs text-muted-foreground">Receive a summary of yesterday's sales, top items, taxes, expenses and profit at the configured time each day.</p>
+              <label className="flex items-center justify-between p-3 rounded-lg bg-muted/40 cursor-pointer">
+                <span className="text-sm font-medium">Enable daily Z-Report email</span>
+                <input type="checkbox" checked={zCfg.enabled} onChange={e => setZCfg({ ...zCfg, enabled: e.target.checked })} className="h-4 w-4" />
+              </label>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Recipient Email</label>
+                <input type="email" value={zCfg.recipient_email} onChange={e => setZCfg({ ...zCfg, recipient_email: e.target.value })} placeholder="owner@example.com"
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Hour (0-23, IST)</label>
+                  <input type="number" min={0} max={23} value={zCfg.send_hour} onChange={e => setZCfg({ ...zCfg, send_hour: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Minute (0-59)</label>
+                  <input type="number" min={0} max={59} value={zCfg.send_minute} onChange={e => setZCfg({ ...zCfg, send_minute: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm" />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={handleSaveZ} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
+                  <Save className="h-4 w-4" /> Save
+                </button>
+                <button onClick={handleDownloadZ} disabled={zSending} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted text-foreground text-sm font-medium hover:bg-muted/80 border border-border disabled:opacity-50">
+                  <Download className="h-4 w-4" /> Download Yesterday's Z-Report
+                </button>
+                <button onClick={handleSendNow} disabled={zSending || !zCfg.recipient_email} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-success text-white text-sm font-medium hover:bg-success/90 disabled:opacity-50">
+                  <Send className="h-4 w-4" /> Send Test Email Now
+                </button>
+              </div>
+              <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg">
+                <strong>Note:</strong> Automated daily emails require an email domain to be configured in Lovable Cloud. Until then, you can download the Z-Report manually anytime, or set the recipient email and click Save — automation will activate once email is configured.
+              </div>
+            </div>
+          </div>
+        )}
+
         {tab === "appearance" && (
           <div className="space-y-4">
             <div className="glass-card rounded-xl p-5">
