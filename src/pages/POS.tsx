@@ -141,24 +141,9 @@ export default function POS() {
     }
   }, [lastSaleForPrint, handleReactPrint]);
 
-  // Screen wake lock
-  useEffect(() => {
-    let wakeLock: any = null;
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await (navigator as any).wakeLock.request('screen');
-        }
-      } catch {}
-    };
-    requestWakeLock();
-    const handleVisibility = () => { if (document.visibilityState === 'visible') requestWakeLock(); };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      wakeLock?.release?.();
-    };
-  }, []);
+  // Screen wake lock is now handled globally by Layout via useKeepScreenOn().
+  // (Toggle: Settings → POS → "Keep screen on")
+
 
   // Configure Global Barcode Scanner
   useBarcodeScanner({
