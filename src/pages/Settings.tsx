@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift, ShoppingCart, Calculator } from "lucide-react";
 import { toast } from "sonner";
 import { getPrinterConfig, savePrinterConfig, connectUSBPrinter, connectBluetoothPrinter, isUSBConnected, isBTConnected, type PrinterConfig } from "@/lib/printService";
+import { getKeepScreenOn, setKeepScreenOn } from "@/hooks/useKeepScreenOn";
 
 interface PaymentMethod {
   id: string; name: string; code: string; icon: string; is_active: boolean; sort_order: number;
@@ -60,6 +61,7 @@ export default function Settings() {
   const [pmSaving, setPmSaving] = useState(false);
   const [printerConfig, setPrinterConfig] = useState<PrinterConfig>(getPrinterConfig());
   const [defaultPayment, setDefaultPayment] = useState<string>(localStorage.getItem("pos_default_payment") || "cash");
+  const [keepScreenOn, setKeepScreenOnState] = useState<boolean>(getKeepScreenOn());
   const [biz, setBiz] = useState<BusinessDetails>(getBusinessDetails());
   const [bizSaving, setBizSaving] = useState(false);
 
@@ -500,6 +502,30 @@ export default function Settings() {
                   {cashRegEnabled ? "Enabled" : "Disabled"}
                 </button>
               </div>
+
+              {/* Keep Screen On */}
+              <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-border bg-muted/20">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Keep screen on while app is open</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Prevents your phone or tablet from auto-locking while CloudERP is open. Useful at the billing counter. Disable to allow normal screen timeout.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !keepScreenOn;
+                    setKeepScreenOnState(next);
+                    setKeepScreenOn(next);
+                    toast.success(`Keep screen on ${next ? "enabled" : "disabled"}`);
+                  }}
+                  className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    keepScreenOn ? "bg-success/10 text-success border border-success/30" : "bg-muted text-muted-foreground border border-border"
+                  }`}
+                >
+                  {keepScreenOn ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+
               <p className="text-[11px] text-muted-foreground">⚙️ This setting is per-device and isolated to this business. Each branch can configure independently.</p>
             </div>
           </div>
