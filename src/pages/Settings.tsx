@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift, ShoppingCart, Calculator } from "lucide-react";
+import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift, ShoppingCart, Calculator, Mail, Send, Download } from "lucide-react";
 import { toast } from "sonner";
 import { getPrinterConfig, savePrinterConfig, connectUSBPrinter, connectBluetoothPrinter, isUSBConnected, isBTConnected, type PrinterConfig } from "@/lib/printService";
 import { getKeepScreenOn, setKeepScreenOn } from "@/hooks/useKeepScreenOn";
+import { getZReportConfig, saveZReportConfig, generateZReport, downloadZReportExcel, sendZReportEmail, type ZReportConfig } from "@/lib/zReport";
 
 interface PaymentMethod {
   id: string; name: string; code: string; icon: string; is_active: boolean; sort_order: number;
@@ -52,7 +53,9 @@ export default function Settings() {
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer" | "loyalty" | "pos">("profile");
+  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer" | "loyalty" | "pos" | "zreport">("profile");
+  const [zCfg, setZCfg] = useState<ZReportConfig>(() => tenantId ? getZReportConfig(tenantId) : { enabled: false, recipient_email: "", send_hour: 9, send_minute: 0 });
+  const [zSending, setZSending] = useState(false);
   const [tenantSettings, setTenantSettings] = useState<any>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -253,9 +256,39 @@ export default function Settings() {
     { id: "payments" as const, label: "Payments", icon: CreditCard },
     { id: "loyalty" as const, label: "Loyalty", icon: Gift },
     { id: "pos" as const, label: "POS", icon: ShoppingCart },
+    { id: "zreport" as const, label: "Daily Z-Report", icon: Mail },
     { id: "printer" as const, label: "Printer", icon: Printer },
     { id: "appearance" as const, label: "Theme", icon: Palette },
   ];
+
+  useEffect(() => { if (tenantId) setZCfg(getZReportConfig(tenantId)); }, [tenantId]);
+
+  const handleSaveZ = () => {
+    if (!tenantId) return;
+    if (zCfg.enabled && !zCfg.recipient_email) { toast.error("Email required"); return; }
+    saveZReportConfig(tenantId, zCfg);
+    toast.success("Z-Report settings saved");
+  };
+
+  const handleDownloadZ = async () => {
+    if (!tenantId) return;
+    setZSending(true);
+    try {
+      const z = await generateZReport(tenantId, activeBranchId);
+      downloadZReportExcel(z, tenant?.name || "report");
+      toast.success("Z-Report downloaded");
+    } catch (e: any) { toast.error(e.message); }
+    setZSending(false);
+  };
+
+  const handleSendNow = async () => {
+    if (!tenantId || !zCfg.recipient_email) { toast.error("Set recipient email first"); return; }
+    setZSending(true);
+    const ok = await sendZReportEmail(tenantId, activeBranchId, zCfg.recipient_email, tenant?.name || "Your Business");
+    if (ok) toast.success("Test email sent!");
+    else toast.error("Email service not configured. Please set up an email domain in Lovable Cloud first.");
+    setZSending(false);
+  };
 
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
