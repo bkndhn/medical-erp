@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift, ShoppingCart, Calculator } from "lucide-react";
+import { Settings as SettingsIcon, Save, User, Building2, LogOut, CreditCard, Plus, Edit2, Trash2, X, Sun, Moon, Palette, Printer, Bluetooth, Usb, Monitor, Star, Check, Store, Gift, ShoppingCart, Calculator, Mail, Send, Download } from "lucide-react";
 import { toast } from "sonner";
 import { getPrinterConfig, savePrinterConfig, connectUSBPrinter, connectBluetoothPrinter, isUSBConnected, isBTConnected, type PrinterConfig } from "@/lib/printService";
 import { getKeepScreenOn, setKeepScreenOn } from "@/hooks/useKeepScreenOn";
+import { getZReportConfig, saveZReportConfig, generateZReport, downloadZReportExcel, sendZReportEmail, type ZReportConfig } from "@/lib/zReport";
 
 interface PaymentMethod {
   id: string; name: string; code: string; icon: string; is_active: boolean; sort_order: number;
@@ -52,7 +53,9 @@ export default function Settings() {
   const [fullName, setFullName] = useState(profile?.full_name || "");
   const [phone, setPhone] = useState(profile?.phone || "");
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer" | "loyalty" | "pos">("profile");
+  const [tab, setTab] = useState<"profile" | "business" | "payments" | "appearance" | "printer" | "loyalty" | "pos" | "zreport">("profile");
+  const [zCfg, setZCfg] = useState<ZReportConfig>(() => tenantId ? getZReportConfig(tenantId) : { enabled: false, recipient_email: "", send_hour: 9, send_minute: 0 });
+  const [zSending, setZSending] = useState(false);
   const [tenantSettings, setTenantSettings] = useState<any>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -253,9 +256,39 @@ export default function Settings() {
     { id: "payments" as const, label: "Payments", icon: CreditCard },
     { id: "loyalty" as const, label: "Loyalty", icon: Gift },
     { id: "pos" as const, label: "POS", icon: ShoppingCart },
+    { id: "zreport" as const, label: "Daily Z-Report", icon: Mail },
     { id: "printer" as const, label: "Printer", icon: Printer },
     { id: "appearance" as const, label: "Theme", icon: Palette },
   ];
+
+  useEffect(() => { if (tenantId) setZCfg(getZReportConfig(tenantId)); }, [tenantId]);
+
+  const handleSaveZ = () => {
+    if (!tenantId) return;
+    if (zCfg.enabled && !zCfg.recipient_email) { toast.error("Email required"); return; }
+    saveZReportConfig(tenantId, zCfg);
+    toast.success("Z-Report settings saved");
+  };
+
+  const handleDownloadZ = async () => {
+    if (!tenantId) return;
+    setZSending(true);
+    try {
+      const z = await generateZReport(tenantId, activeBranchId);
+      downloadZReportExcel(z, tenant?.name || "report");
+      toast.success("Z-Report downloaded");
+    } catch (e: any) { toast.error(e.message); }
+    setZSending(false);
+  };
+
+  const handleSendNow = async () => {
+    if (!tenantId || !zCfg.recipient_email) { toast.error("Set recipient email first"); return; }
+    setZSending(true);
+    const ok = await sendZReportEmail(tenantId, activeBranchId, zCfg.recipient_email, tenant?.name || "Your Business");
+    if (ok) toast.success("Test email sent!");
+    else toast.error("Email service not configured. Please set up an email domain in Lovable Cloud first.");
+    setZSending(false);
+  };
 
   return (
     <div className="h-screen overflow-y-auto scrollbar-thin pb-20 md:pb-0">
@@ -430,6 +463,50 @@ export default function Settings() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${printerConfig.showDialog ? "bg-success/10 text-success border border-success/30" : "bg-muted text-muted-foreground border border-border"}`}>
                   {printerConfig.showDialog ? "On" : "Off"}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "zreport" && (
+          <div className="space-y-4">
+            <div className="glass-card rounded-xl p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Mail className="h-4 w-4 text-primary" /> Daily Z-Report Email</h3>
+              <p className="text-xs text-muted-foreground">Receive a summary of yesterday's sales, top items, taxes, expenses and profit at the configured time each day.</p>
+              <label className="flex items-center justify-between p-3 rounded-lg bg-muted/40 cursor-pointer">
+                <span className="text-sm font-medium">Enable daily Z-Report email</span>
+                <input type="checkbox" checked={zCfg.enabled} onChange={e => setZCfg({ ...zCfg, enabled: e.target.checked })} className="h-4 w-4" />
+              </label>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Recipient Email</label>
+                <input type="email" value={zCfg.recipient_email} onChange={e => setZCfg({ ...zCfg, recipient_email: e.target.value })} placeholder="owner@example.com"
+                  className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Hour (0-23, IST)</label>
+                  <input type="number" min={0} max={23} value={zCfg.send_hour} onChange={e => setZCfg({ ...zCfg, send_hour: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Minute (0-59)</label>
+                  <input type="number" min={0} max={59} value={zCfg.send_minute} onChange={e => setZCfg({ ...zCfg, send_minute: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border text-sm" />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={handleSaveZ} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90">
+                  <Save className="h-4 w-4" /> Save
+                </button>
+                <button onClick={handleDownloadZ} disabled={zSending} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-muted text-foreground text-sm font-medium hover:bg-muted/80 border border-border disabled:opacity-50">
+                  <Download className="h-4 w-4" /> Download Yesterday's Z-Report
+                </button>
+                <button onClick={handleSendNow} disabled={zSending || !zCfg.recipient_email} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-success text-white text-sm font-medium hover:bg-success/90 disabled:opacity-50">
+                  <Send className="h-4 w-4" /> Send Test Email Now
+                </button>
+              </div>
+              <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg">
+                <strong>Note:</strong> Automated daily emails require an email domain to be configured in Lovable Cloud. Until then, you can download the Z-Report manually anytime, or set the recipient email and click Save — automation will activate once email is configured.
               </div>
             </div>
           </div>

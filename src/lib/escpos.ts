@@ -1,7 +1,8 @@
 // WebUSB ESC/POS Thermal Printer Utility
+// @ts-nocheck — WebUSB types are not in default TS lib
 
 export class EscPosPrinter {
-  private device: USBDevice | null = null;
+  private device: any = null;
   private endpointIn: number | null = null;
   private endpointOut: number | null = null;
   private interfaceNumber: number | null = null;
@@ -25,7 +26,7 @@ export class EscPosPrinter {
       const conf = this.device.configuration;
       if (!conf) throw new Error("No USB configuration found");
 
-      let alt: USBAlternateInterface | null = null;
+      let alt: any = null;
       for (const intf of conf.interfaces) {
         for (const alternate of intf.alternates) {
           if (alternate.interfaceClass === 7) { // Printer class

@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart, Printer, MessageSquare, RefreshCw, Phone } from "lucide-react";
+import { Users, Plus, Search, Edit2, Trash2, X, Save, Eye, ShoppingCart, Printer, MessageSquare, RefreshCw, Phone, Upload } from "lucide-react";
 import { toast } from "sonner";
 import DateFilterExport, { exportToExcel, exportToPDF } from "@/components/DateFilterExport";
 import { printReceipt, generateWhatsAppText } from "@/lib/printService";
 import { getBusinessDetails } from "@/pages/Settings";
+import BulkImportModal from "@/components/BulkImportModal";
 
 interface Customer {
   id: string; name: string; phone: string | null; email: string | null;
@@ -29,6 +30,7 @@ export default function Customers() {
   const [selectedBill, setSelectedBill] = useState<any>(null);
   const [billItems, setBillItems] = useState<any[]>([]);
   const [loadingBillItems, setLoadingBillItems] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const fetch_ = async () => {
     if (!tenantId) return;
@@ -121,9 +123,14 @@ export default function Customers() {
             <h1 className="text-lg sm:text-2xl font-bold text-foreground flex items-center gap-2"><Users className="h-5 sm:h-6 w-5 sm:w-6 text-primary" /> Customers</h1>
             <p className="text-sm text-muted-foreground">{filtered.length} customers</p>
           </div>
-          <button onClick={() => { setEditItem({ name: "", phone: "", email: "", address: "" }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
-            <Plus className="h-4 w-4" /> Add Customer
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-muted text-foreground text-sm font-medium hover:bg-muted/80 border border-border touch-manipulation">
+              <Upload className="h-4 w-4" /> Import
+            </button>
+            <button onClick={() => { setEditItem({ name: "", phone: "", email: "", address: "" }); setShowForm(true); }} className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 touch-manipulation">
+              <Plus className="h-4 w-4" /> Add Customer
+            </button>
+          </div>
         </div>
         <div className="mt-3 flex flex-col gap-3">
           <div className="relative max-w-md">
@@ -315,6 +322,38 @@ export default function Customers() {
           </div>
         </div>
       )}
+
+      <BulkImportModal
+        open={showImport}
+        title="Customers"
+        onClose={() => setShowImport(false)}
+        fields={[
+          { key: "name", label: "Name", required: true },
+          { key: "phone", label: "Phone" },
+          { key: "email", label: "Email", validate: v => /\S+@\S+\.\S+/.test(String(v)) ? null : "Invalid email" },
+          { key: "address", label: "Address" },
+        ]}
+        templateRows={[
+          { Name: "John Doe", Phone: "9876543210", Email: "john@example.com", Address: "123 Main St" },
+        ]}
+        onImport={async rows => {
+          if (!tenantId) return { inserted: 0, errors: [] };
+          const payload = rows.map(r => ({ ...r, tenant_id: tenantId }));
+          const errors: { row: number; message: string }[] = [];
+          let inserted = 0;
+          // chunk insert for safety
+          const chunks: any[][] = [];
+          for (let i = 0; i < payload.length; i += 100) chunks.push(payload.slice(i, i + 100));
+          for (let ci = 0; ci < chunks.length; ci++) {
+            const { error, data } = await supabase.from("customers").insert(chunks[ci]).select("id");
+            if (error) errors.push({ row: ci * 100 + 1, message: error.message });
+            else inserted += data?.length || 0;
+          }
+          fetch_();
+          toast.success(`Imported ${inserted} customers`);
+          return { inserted, errors };
+        }}
+      />
 
     </div>
   );

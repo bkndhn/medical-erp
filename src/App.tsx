@@ -38,6 +38,8 @@ const NotFound       = lazy(() => import("./pages/NotFound"));
 const Install        = lazy(() => import("./pages/Install"));
 const Attendance     = lazy(() => import("./pages/Attendance"));
 const CashRegister   = lazy(() => import("./pages/CashRegister"));
+const Reorder        = lazy(() => import("./pages/Reorder"));
+const GstReports     = lazy(() => import("./pages/GstReports"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,6 +94,8 @@ const App = () => (
                 <Route path="/super-admin" element={<SuperAdmin />} />
                 <Route path="/users" element={<UserManagement />} />
                 <Route path="/attendance" element={<Attendance />} />
+                <Route path="/reorder" element={<Reorder />} />
+                <Route path="/gst-reports" element={<GstReports />} />
               </Route>
               <Route path="*" element={<NotFound />} />
             </Routes>

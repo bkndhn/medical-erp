@@ -448,7 +448,7 @@ export default function Transfers() {
                 Status: t.status,
                 Notes: t.notes || "",
               })), "transfer-history")}
-              defaultPreset="last7"
+              defaultPreset="this_week"
             />
             {branches.length > 0 && (
               <select value={historyBranchFilter} onChange={e => setHistoryBranchFilter(e.target.value)}
