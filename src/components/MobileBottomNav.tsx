@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { prefetchRoute } from "@/lib/prefetch";
 import {
   LayoutDashboard, ShoppingCart, Package, FileText, MoreHorizontal, X,
   Users, Truck, Wallet, BarChart3, Building2, Monitor, CreditCard, Clock,
@@ -70,6 +71,7 @@ export default function MobileBottomNav() {
                   <button
                     key={item.url}
                     onClick={() => handleNav(item.url)}
+                    onTouchStart={() => prefetchRoute(item.url)}
                     className={`flex flex-col items-center gap-1.5 p-3 rounded-xl transition-all touch-manipulation ${
                       isActive(item.url)
                         ? "bg-primary/15 text-primary"
@@ -93,6 +95,7 @@ export default function MobileBottomNav() {
             <button
               key={item.url}
               onClick={() => handleNav(item.url)}
+              onTouchStart={() => prefetchRoute(item.url)}
               className={`flex flex-col items-center justify-center gap-0.5 w-16 h-full transition-all touch-manipulation ${
                 isActive(item.url)
                   ? "text-primary"

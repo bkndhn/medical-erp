@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { prefetchRoute } from "@/lib/prefetch";
 import {
   LayoutDashboard, ShoppingCart, Package, Users, FileText,
   Settings, Truck, CreditCard, Building2,
@@ -64,6 +65,9 @@ export function AppSidebar() {
     <li key={item.url}>
       <button
         onClick={() => handleNav(item.url)}
+        onMouseEnter={() => prefetchRoute(item.url)}
+        onFocus={() => prefetchRoute(item.url)}
+        onTouchStart={() => prefetchRoute(item.url)}
         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group touch-manipulation
           ${isActive(item.url)
             ? 'bg-primary/10 text-primary border border-primary/20'
