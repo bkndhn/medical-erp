@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { warmCommonRoutes } from "./lib/prefetch";
 
 // Restore saved accent color
 const savedAccent = localStorage.getItem('app-accent');
@@ -24,3 +25,6 @@ if (isPreviewHost || isInIframe) {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+// Warm the most-used route chunks during browser idle time so navigation feels instant.
+warmCommonRoutes();
