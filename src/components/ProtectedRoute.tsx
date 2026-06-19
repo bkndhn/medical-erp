@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Loader2, ShieldAlert } from "lucide-react";
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, profile, tenantActive } = useAuth();
+  const { user, loading, profile, tenantActive, hasRole } = useAuth();
 
   if (loading) {
     return (
@@ -44,8 +44,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  // If no tenant, redirect to onboarding
-  if (profile && !profile.tenant_id) return <Navigate to="/onboarding" replace />;
+  // Super admins are platform-level users and do not need a tenant.
+  if (profile && !profile.tenant_id && !hasRole("super_admin")) return <Navigate to="/onboarding" replace />;
 
   return <>{children}</>;
 }

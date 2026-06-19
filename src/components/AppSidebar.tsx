@@ -42,10 +42,11 @@ export function AppSidebar() {
   const [branchDropOpen, setBranchDropOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { profile, signOut, getPageAccess, allBranches, activeBranchId, setActiveBranchId, isMultiBranchAdmin } = useAuth();
+  const { profile, roles, signOut, getPageAccess, allBranches, activeBranchId, setActiveBranchId, isMultiBranchAdmin } = useAuth();
 
   const allowedPages = getPageAccess();
   const visibleNav = allNav.filter(n => allowedPages.includes(n.page));
+  const primaryRole = roles.includes("super_admin") ? "Super Admin" : roles.includes("admin") ? "Admin" : roles[0]?.replace(/_/g, " ") ?? "User";
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -99,7 +100,7 @@ export function AppSidebar() {
         {!collapsed && (
           <div className="overflow-hidden flex-1 min-w-0">
             <h1 className="text-sm font-bold text-foreground tracking-tight">CloudERP</h1>
-            <p className="text-[10px] text-muted-foreground truncate">{profile?.full_name || "User"}</p>
+            <p className="text-[10px] text-muted-foreground truncate capitalize">{primaryRole}</p>
           </div>
         )}
         {/* Mobile close button */}
