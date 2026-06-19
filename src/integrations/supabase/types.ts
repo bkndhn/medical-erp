@@ -583,6 +583,7 @@ export type Database = {
           id: string
           image_url: string | null
           is_active: boolean
+          is_schedule_h: boolean
           is_weighable: boolean | null
           low_stock_threshold: number | null
           manufacturer: string | null
@@ -590,6 +591,7 @@ export type Database = {
           mrp: number
           name: string
           price: number
+          rack_location: string | null
           size: string | null
           sku: string | null
           stock: number
@@ -614,6 +616,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_schedule_h?: boolean
           is_weighable?: boolean | null
           low_stock_threshold?: number | null
           manufacturer?: string | null
@@ -621,6 +624,7 @@ export type Database = {
           mrp?: number
           name: string
           price?: number
+          rack_location?: string | null
           size?: string | null
           sku?: string | null
           stock?: number
@@ -645,6 +649,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           is_active?: boolean
+          is_schedule_h?: boolean
           is_weighable?: boolean | null
           low_stock_threshold?: number | null
           manufacturer?: string | null
@@ -652,6 +657,7 @@ export type Database = {
           mrp?: number
           name?: string
           price?: number
+          rack_location?: string | null
           size?: string | null
           sku?: string | null
           stock?: number
