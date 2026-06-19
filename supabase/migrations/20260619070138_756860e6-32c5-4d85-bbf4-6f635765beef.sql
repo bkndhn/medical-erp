@@ -1,0 +1,4 @@
+
+ALTER TABLE public.items
+  ADD COLUMN IF NOT EXISTS rack_location TEXT,
+  ADD COLUMN IF NOT EXISTS is_schedule_h BOOLEAN NOT NULL DEFAULT false;
