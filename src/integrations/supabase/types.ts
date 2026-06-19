@@ -155,12 +155,17 @@ export type Database = {
           address: string | null
           code: string | null
           created_at: string
+          drug_license: string | null
           email: string | null
+          fssai_number: string | null
           gst_number: string | null
           id: string
           is_active: boolean
           name: string
           phone: string | null
+          receipt_footer: string | null
+          receipt_header: string | null
+          tagline: string | null
           tenant_id: string
           updated_at: string
         }
@@ -168,12 +173,17 @@ export type Database = {
           address?: string | null
           code?: string | null
           created_at?: string
+          drug_license?: string | null
           email?: string | null
+          fssai_number?: string | null
           gst_number?: string | null
           id?: string
           is_active?: boolean
           name: string
           phone?: string | null
+          receipt_footer?: string | null
+          receipt_header?: string | null
+          tagline?: string | null
           tenant_id: string
           updated_at?: string
         }
@@ -181,12 +191,17 @@ export type Database = {
           address?: string | null
           code?: string | null
           created_at?: string
+          drug_license?: string | null
           email?: string | null
+          fssai_number?: string | null
           gst_number?: string | null
           id?: string
           is_active?: boolean
           name?: string
           phone?: string | null
+          receipt_footer?: string | null
+          receipt_header?: string | null
+          tagline?: string | null
           tenant_id?: string
           updated_at?: string
         }
@@ -291,6 +306,7 @@ export type Database = {
           name: string
           outstanding: number | null
           phone: string | null
+          reward_points: number
           tenant_id: string
           updated_at: string
         }
@@ -304,6 +320,7 @@ export type Database = {
           name: string
           outstanding?: number | null
           phone?: string | null
+          reward_points?: number
           tenant_id: string
           updated_at?: string
         }
@@ -317,6 +334,7 @@ export type Database = {
           name?: string
           outstanding?: number | null
           phone?: string | null
+          reward_points?: number
           tenant_id?: string
           updated_at?: string
         }
@@ -485,6 +503,8 @@ export type Database = {
           purchase_price: number | null
           quantity_in: number
           quantity_out: number
+          quantity_remaining: number
+          quantity_sold: number
           selling_price: number | null
           tenant_id: string
         }
@@ -499,6 +519,8 @@ export type Database = {
           purchase_price?: number | null
           quantity_in?: number
           quantity_out?: number
+          quantity_remaining?: number
+          quantity_sold?: number
           selling_price?: number | null
           tenant_id: string
         }
@@ -513,6 +535,8 @@ export type Database = {
           purchase_price?: number | null
           quantity_in?: number
           quantity_out?: number
+          quantity_remaining?: number
+          quantity_sold?: number
           selling_price?: number | null
           tenant_id?: string
         }
@@ -924,6 +948,7 @@ export type Database = {
           purchase_id: string
           purchase_unit: string
           quantity: number
+          tenant_id: string | null
           total: number
           unit_price: number
         }
@@ -934,6 +959,7 @@ export type Database = {
           purchase_id: string
           purchase_unit?: string
           quantity?: number
+          tenant_id?: string | null
           total?: number
           unit_price?: number
         }
@@ -944,6 +970,7 @@ export type Database = {
           purchase_id?: string
           purchase_unit?: string
           quantity?: number
+          tenant_id?: string | null
           total?: number
           unit_price?: number
         }
@@ -1102,6 +1129,7 @@ export type Database = {
       }
       sale_items: {
         Row: {
+          batch_id: string | null
           discount: number | null
           id: string
           item_id: string | null
@@ -1113,6 +1141,7 @@ export type Database = {
           unit_price: number
         }
         Insert: {
+          batch_id?: string | null
           discount?: number | null
           id?: string
           item_id?: string | null
@@ -1124,6 +1153,7 @@ export type Database = {
           unit_price?: number
         }
         Update: {
+          batch_id?: string | null
           discount?: number | null
           id?: string
           item_id?: string | null
@@ -1135,6 +1165,13 @@ export type Database = {
           unit_price?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "sale_items_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "item_batches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "sale_items_item_id_fkey"
             columns: ["item_id"]
@@ -1833,6 +1870,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_batch_sold: {
+        Args: { p_batch_id: string; p_qty: number }
+        Returns: undefined
       }
       is_tenant_active: { Args: never; Returns: boolean }
       update_customer_reward_points: {

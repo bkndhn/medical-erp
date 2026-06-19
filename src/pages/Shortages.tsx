@@ -71,9 +71,10 @@ export default function ShortageBook() {
 
     setSaving(true);
     try {
+      const payload = { ...formData, item_name: formData.item_name! };
       const { error } = formData.id
-        ? await supabase.from("shortage_book").update(formData).eq("id", formData.id).eq("tenant_id", tenantId)
-        : await supabase.from("shortage_book").insert([{ ...formData, tenant_id: tenantId }]);
+        ? await supabase.from("shortage_book").update(payload).eq("id", formData.id).eq("tenant_id", tenantId)
+        : await supabase.from("shortage_book").insert([{ ...payload, tenant_id: tenantId }]);
 
       if (error) throw error;
       toast.success(formData.id ? "Updated successfully" : "Added to Shortage Book");
