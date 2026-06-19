@@ -917,7 +917,7 @@ export default function POS() {
 
         if (ci.batchId) {
           // Exact batch known from cart → use atomic RPC for accuracy
-          const { error: rpcErr } = await supabase.rpc("increment_batch_sold", { batch_id: ci.batchId, qty: remaining });
+          const { error: rpcErr } = await supabase.rpc("increment_batch_sold", { p_batch_id: ci.batchId, p_qty: remaining });
           if (rpcErr) {
             // Fallback: read-then-write manual update
             const { data: b } = await supabase
@@ -1106,7 +1106,7 @@ export default function POS() {
           if (si.batch_id) {
             // Restore batch stock by decrementing sold quantity
             try {
-              const { error: rpcReturnErr } = await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockAdd });
+              const { error: rpcReturnErr } = await supabase.rpc("increment_batch_sold", { p_batch_id: si.batch_id, p_qty: -stockAdd });
               if (rpcReturnErr) throw rpcReturnErr;
             } catch {
               // Fallback: manual decrement
@@ -1154,7 +1154,7 @@ export default function POS() {
             if (si.batch_id) {
               // Restore batch stock by decrementing sold quantity
               try {
-                const { error: rpcDeleteErr } = await supabase.rpc("increment_batch_sold", { batch_id: si.batch_id, qty: -stockRestored });
+                const { error: rpcDeleteErr } = await supabase.rpc("increment_batch_sold", { p_batch_id: si.batch_id, p_qty: -stockRestored });
                 if (rpcDeleteErr) throw rpcDeleteErr;
               } catch {
                 // Fallback: manual decrement

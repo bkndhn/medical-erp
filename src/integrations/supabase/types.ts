@@ -498,6 +498,7 @@ export type Database = {
           created_at: string
           expiry_date: string | null
           id: string
+          is_active: boolean
           item_id: string
           mrp: number | null
           purchase_price: number | null
@@ -514,6 +515,7 @@ export type Database = {
           created_at?: string
           expiry_date?: string | null
           id?: string
+          is_active?: boolean
           item_id: string
           mrp?: number | null
           purchase_price?: number | null
@@ -530,6 +532,7 @@ export type Database = {
           created_at?: string
           expiry_date?: string | null
           id?: string
+          is_active?: boolean
           item_id?: string
           mrp?: number | null
           purchase_price?: number | null

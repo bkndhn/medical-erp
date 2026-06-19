@@ -1,0 +1,3 @@
+
+ALTER TABLE public.item_batches
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
