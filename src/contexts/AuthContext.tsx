@@ -77,15 +77,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [activeBranchId, setActiveBranchIdState] = useState<string | null>(null);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, userRoles?: string[]) => {
     const { data } = await supabase
       .from("profiles")
       .select("*")
       .eq("user_id", userId)
       .single();
     setProfile(data);
-    
-    // Check if tenant is active
+
+    const isSuperAdmin = userRoles?.includes("super_admin") ?? false;
+
     if (data?.tenant_id) {
       const { data: tenant } = await supabase
         .from("tenants")
@@ -94,12 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single();
       const active = tenant?.is_active ?? true;
       setTenantActive(active);
-      
-      // Force logout if tenant is paused or user is deactivated
+
+      // Super admins are platform-level and never blocked by tenant/user pause
+      if (isSuperAdmin) return data;
+
       if (!active || !data.is_active) {
         await supabase.auth.signOut();
         return null;
       }
+    } else {
+      setTenantActive(true);
     }
     return data;
   };
