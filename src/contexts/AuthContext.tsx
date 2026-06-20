@@ -77,15 +77,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [activeBranchId, setActiveBranchIdState] = useState<string | null>(null);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async (userId: string, userRoles?: string[]) => {
     const { data } = await supabase
       .from("profiles")
       .select("*")
       .eq("user_id", userId)
       .single();
     setProfile(data);
-    
-    // Check if tenant is active
+
+    const isSuperAdmin = userRoles?.includes("super_admin") ?? false;
+
     if (data?.tenant_id) {
       const { data: tenant } = await supabase
         .from("tenants")
@@ -94,12 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single();
       const active = tenant?.is_active ?? true;
       setTenantActive(active);
-      
-      // Force logout if tenant is paused or user is deactivated
+
+      // Super admins are platform-level and never blocked by tenant/user pause
+      if (isSuperAdmin) return data;
+
       if (!active || !data.is_active) {
         await supabase.auth.signOut();
         return null;
       }
+    } else {
+      setTenantActive(true);
     }
     return data;
   };
@@ -145,8 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = async () => {
     if (user) {
-      const profileData = await fetchProfile(user.id);
       const userRoles = await fetchRoles(user.id);
+      const profileData = await fetchProfile(user.id, userRoles);
       if (profileData?.tenant_id) {
         await fetchBranches(profileData.tenant_id, profileData, userRoles);
       }
@@ -160,8 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         if (session?.user) {
           setTimeout(async () => {
-            const profileData = await fetchProfile(session.user.id);
             const userRoles = await fetchRoles(session.user.id);
+            const profileData = await fetchProfile(session.user.id, userRoles);
             if (profileData?.tenant_id) {
               await fetchBranches(profileData.tenant_id, profileData, userRoles);
             }
@@ -181,13 +186,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id).then(async (profileData) => {
+        (async () => {
           const userRoles = await fetchRoles(session.user.id);
+          const profileData = await fetchProfile(session.user.id, userRoles);
           if (profileData?.tenant_id) {
             await fetchBranches(profileData.tenant_id, profileData, userRoles);
           }
           setLoading(false);
-        });
+        })();
       } else {
         setLoading(false);
       }
@@ -196,9 +202,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Realtime listener for forced logouts
+  // Realtime listener for forced logouts (super admins bypass)
   useEffect(() => {
     if (!user || !profile) return;
+    const isSuperAdmin = roles.includes("super_admin");
+    if (isSuperAdmin) return;
 
     const channel = supabase.channel(`auth_status_${user.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${user.id}` }, (payload) => {
@@ -240,6 +248,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
 
     if (data.user) {
+      // Detect super_admin role — they bypass tenant/user pause and session caps
+      const { data: roleRows } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", data.user.id);
+      const userRoleList = roleRows?.map(r => r.role) || [];
+      const isSuperAdmin = userRoleList.includes("super_admin");
+
       // ----- Tenant & user status check BEFORE letting them in -----
       const { data: prof } = await supabase
         .from("profiles")
@@ -247,8 +263,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq("user_id", data.user.id)
         .single();
 
-      // User account deactivated
-      if (prof && prof.is_active === false) {
+      // User account deactivated (super admin bypass)
+      if (!isSuperAdmin && prof && prof.is_active === false) {
         await supabase.auth.signOut();
         throw new Error("Your account has been deactivated. Please contact your administrator.");
       }
@@ -260,22 +276,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq("id", prof.tenant_id)
           .single();
 
-        // Tenant paused by super admin
-        if (tenant && tenant.is_active === false) {
+        // Tenant paused by super admin (super admin bypass)
+        if (!isSuperAdmin && tenant && tenant.is_active === false) {
           await supabase.auth.signOut();
           throw new Error("⛔ Your business account has been paused. Please contact the administrator.");
         }
 
-        // Session limit check
-        const maxSessions = (tenant as any)?.max_sessions || 5;
-        const { data: sessions } = await supabase
-          .from("active_sessions")
-          .select("id")
-          .eq("tenant_id", prof.tenant_id);
+        // Session limit check (super admin bypass)
+        if (!isSuperAdmin) {
+          const maxSessions = (tenant as any)?.max_sessions || 5;
+          const { data: sessions } = await supabase
+            .from("active_sessions")
+            .select("id")
+            .eq("tenant_id", prof.tenant_id);
 
-        if (sessions && sessions.length >= maxSessions) {
-          await supabase.auth.signOut();
-          throw new Error(`Maximum ${maxSessions} concurrent sessions reached. Ask an admin to terminate a session.`);
+          if (sessions && sessions.length >= maxSessions) {
+            await supabase.auth.signOut();
+            throw new Error(`Maximum ${maxSessions} concurrent sessions reached. Ask an admin to terminate a session.`);
+          }
         }
 
         const deviceName = navigator.userAgent.includes("Mobile") ? "Mobile Device"
