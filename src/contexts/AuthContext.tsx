@@ -150,8 +150,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = async () => {
     if (user) {
-      const profileData = await fetchProfile(user.id);
       const userRoles = await fetchRoles(user.id);
+      const profileData = await fetchProfile(user.id, userRoles);
       if (profileData?.tenant_id) {
         await fetchBranches(profileData.tenant_id, profileData, userRoles);
       }
@@ -165,8 +165,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         if (session?.user) {
           setTimeout(async () => {
-            const profileData = await fetchProfile(session.user.id);
             const userRoles = await fetchRoles(session.user.id);
+            const profileData = await fetchProfile(session.user.id, userRoles);
             if (profileData?.tenant_id) {
               await fetchBranches(profileData.tenant_id, profileData, userRoles);
             }
@@ -186,13 +186,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id).then(async (profileData) => {
+        (async () => {
           const userRoles = await fetchRoles(session.user.id);
+          const profileData = await fetchProfile(session.user.id, userRoles);
           if (profileData?.tenant_id) {
             await fetchBranches(profileData.tenant_id, profileData, userRoles);
           }
           setLoading(false);
-        });
+        })();
       } else {
         setLoading(false);
       }
@@ -201,9 +202,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Realtime listener for forced logouts
+  // Realtime listener for forced logouts (super admins bypass)
   useEffect(() => {
     if (!user || !profile) return;
+    const isSuperAdmin = roles.includes("super_admin");
+    if (isSuperAdmin) return;
 
     const channel = supabase.channel(`auth_status_${user.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `user_id=eq.${user.id}` }, (payload) => {
