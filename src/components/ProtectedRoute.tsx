@@ -15,8 +15,10 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   if (!user) return <Navigate to="/auth" replace />;
 
-  // If tenant is paused, show message and force logout
-  if (profile?.tenant_id && !tenantActive) {
+  const isSuperAdmin = hasRole("super_admin");
+
+  // If tenant is paused, show message and force logout (super admins bypass)
+  if (!isSuperAdmin && profile?.tenant_id && !tenantActive) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background px-4">
         <div className="text-center max-w-sm">
@@ -31,8 +33,8 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  // If user is deactivated
-  if (profile && !profile.is_active) {
+  // If user is deactivated (super admins bypass)
+  if (!isSuperAdmin && profile && !profile.is_active) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background px-4">
         <div className="text-center max-w-sm">
@@ -45,7 +47,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }
 
   // Super admins are platform-level users and do not need a tenant.
-  if (profile && !profile.tenant_id && !hasRole("super_admin")) return <Navigate to="/onboarding" replace />;
+  if (profile && !profile.tenant_id && !isSuperAdmin) return <Navigate to="/onboarding" replace />;
 
   return <>{children}</>;
 }
