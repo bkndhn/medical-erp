@@ -7,6 +7,8 @@ interface Item {
   sale_unit?: string;
   unit_price: number;
   total: number;
+  batch_number?: string | null;
+  expiry_date?: string | null;
 }
 
 interface ReceiptProps {
@@ -87,6 +89,13 @@ export const Receipt = forwardRef<HTMLDivElement, ReceiptProps>(
               <tr key={idx}>
                 <td style={{ textAlign: "left", fontSize: "11px", paddingTop: "4px", paddingBottom: "4px", wordWrap: "break-word" }}>
                   {item.item_name}
+                  {(item.batch_number || item.expiry_date) && (
+                    <div style={{ fontSize: "9px", color: "#444" }}>
+                      {item.batch_number ? `B:${item.batch_number}` : ""}
+                      {item.batch_number && item.expiry_date ? " " : ""}
+                      {item.expiry_date ? `Exp:${new Date(item.expiry_date).toLocaleDateString("en-GB", { month: "2-digit", year: "2-digit" })}` : ""}
+                    </div>
+                  )}
                 </td>
                 <td style={{ textAlign: "right", fontSize: "11px", paddingTop: "4px", paddingBottom: "4px" }}>
                   {item.sale_unit === "loose" ? `${item.quantity}L` : item.quantity}
