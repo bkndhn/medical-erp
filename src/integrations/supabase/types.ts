@@ -1208,6 +1208,7 @@ export type Database = {
           customer_id: string | null
           device_id: string | null
           discount: number | null
+          doctor_name: string | null
           grand_total: number
           id: string
           invoice_number: string
@@ -1215,6 +1216,8 @@ export type Database = {
           payment_mode: Database["public"]["Enums"]["payment_mode"]
           reward_points_earned: number | null
           reward_points_used: number | null
+          rx_image_url: string | null
+          rx_required: boolean
           status: Database["public"]["Enums"]["sale_status"]
           subtotal: number
           tax_total: number | null
@@ -1230,6 +1233,7 @@ export type Database = {
           customer_id?: string | null
           device_id?: string | null
           discount?: number | null
+          doctor_name?: string | null
           grand_total?: number
           id?: string
           invoice_number: string
@@ -1237,6 +1241,8 @@ export type Database = {
           payment_mode?: Database["public"]["Enums"]["payment_mode"]
           reward_points_earned?: number | null
           reward_points_used?: number | null
+          rx_image_url?: string | null
+          rx_required?: boolean
           status?: Database["public"]["Enums"]["sale_status"]
           subtotal?: number
           tax_total?: number | null
@@ -1252,6 +1258,7 @@ export type Database = {
           customer_id?: string | null
           device_id?: string | null
           discount?: number | null
+          doctor_name?: string | null
           grand_total?: number
           id?: string
           invoice_number?: string
@@ -1259,6 +1266,8 @@ export type Database = {
           payment_mode?: Database["public"]["Enums"]["payment_mode"]
           reward_points_earned?: number | null
           reward_points_used?: number | null
+          rx_image_url?: string | null
+          rx_required?: boolean
           status?: Database["public"]["Enums"]["sale_status"]
           subtotal?: number
           tax_total?: number | null
