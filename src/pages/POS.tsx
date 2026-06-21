@@ -908,7 +908,15 @@ export default function POS() {
       if (error) throw error;
 
       const itemsWithSaleId = saleItemsData.map(i => ({ ...i, sale_id: sale.id }));
-      await supabase.from("sale_items").insert(itemsWithSaleId as any);
+      const { error: itemsErr } = await supabase.from("sale_items").insert(itemsWithSaleId as any);
+      if (itemsErr) {
+        // Critical: bill saved but items failed — roll back sale and queue offline so nothing is lost
+        console.error("sale_items insert failed:", itemsErr);
+        await supabase.from("sales").delete().eq("id", sale.id);
+        await savePendingSale({ ...saleData, cartItems: saleItemsData });
+        toast.error(`Bill items couldn't save (${itemsErr.message}). Queued for retry.`);
+        return;
+      }
 
       // ── FEFO Batch deduction from item_batches ─────────────────────────────
       for (const ci of savedCart) {
