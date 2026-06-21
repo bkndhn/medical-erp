@@ -118,7 +118,10 @@ export function generateReceiptHTML(sale: any, items: any[], businessName?: stri
   
   const itemRows = items.map(si => {
     const qtyDisplay = si.sale_unit === "loose" ? `${si.quantity} loose` : `${si.quantity}`;
-    return `<tr><td style="font-size:11px">${si.item_name}</td><td style="text-align:right;font-size:11px">${qtyDisplay}</td><td style="text-align:right;font-size:11px">₹${Number(si.unit_price).toFixed(1)}</td><td style="text-align:right;font-size:11px">₹${Number(si.total).toFixed(1)}</td></tr>`;
+    const batchLine = (si.batch_number || si.expiry_date)
+      ? `<div style="font-size:9px;color:#444">${si.batch_number ? `B:${si.batch_number}` : ""}${si.batch_number && si.expiry_date ? " " : ""}${si.expiry_date ? `Exp:${new Date(si.expiry_date).toLocaleDateString("en-GB",{month:"2-digit",year:"2-digit"})}` : ""}</div>`
+      : "";
+    return `<tr><td style="font-size:11px">${si.item_name}${batchLine}</td><td style="text-align:right;font-size:11px">${qtyDisplay}</td><td style="text-align:right;font-size:11px">₹${Number(si.unit_price).toFixed(1)}</td><td style="text-align:right;font-size:11px">₹${Number(si.total).toFixed(1)}</td></tr>`;
   }).join("");
 
   const headerLines: string[] = [];
@@ -258,7 +261,8 @@ export function generateWhatsAppText(sale: any, items: any[], customerInfo?: { n
   const name = branchDetails?.receipt_header || branchDetails?.name || biz.storeName || "Store";
   const itemsText = items.map(si => {
     const qtyLabel = si.sale_unit === "loose" ? `${si.quantity} loose` : `x${si.quantity}`;
-    return `${si.item_name} ${qtyLabel} = ₹${Number(si.total).toFixed(0)}`;
+    const batchTxt = si.batch_number ? ` [B:${si.batch_number}${si.expiry_date ? ` Exp:${new Date(si.expiry_date).toLocaleDateString("en-GB",{month:"2-digit",year:"2-digit"})}` : ""}]` : "";
+    return `${si.item_name}${batchTxt} ${qtyLabel} = ₹${Number(si.total).toFixed(0)}`;
   }).join("\n");
   
   let msg = `🧾 *${(name.split('\n')[0])}*\n`;

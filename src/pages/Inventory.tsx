@@ -288,9 +288,17 @@ export default function Inventory() {
   };
 
   /** Add Batch to existing item */
+  const generateBatchNumber = (itemName?: string) => {
+    const d = new Date();
+    const yyyymmdd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const prefix = (itemName || "B").replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() || "B";
+    const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
+    return `${prefix}-${yyyymmdd}-${rand}`;
+  };
+
   const openAddBatch = (item: Item) => {
     setAddBatchItem(item);
-    setAddBatchForm({ batch_number: "", expiry_date: "", quantity: 0, purchase_price: item.cost_price || 0, selling_price: item.price || 0, mrp: item.mrp || 0 });
+    setAddBatchForm({ batch_number: generateBatchNumber(item.name), expiry_date: "", quantity: 0, purchase_price: item.cost_price || 0, selling_price: item.price || 0, mrp: item.mrp || 0 });
     setShowAddBatch(true);
   };
 

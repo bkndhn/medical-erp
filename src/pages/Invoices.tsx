@@ -193,7 +193,16 @@ export default function Invoices() {
                 <tbody>
                   {saleItems.map(si => (
                     <tr key={si.id} className="border-b border-border/30">
-                      <td className="py-2 text-foreground text-xs">{si.item_name}</td>
+                      <td className="py-2 text-foreground text-xs">
+                        {si.item_name}
+                        {(si.batch_number || si.expiry_date) && (
+                          <div className="text-[10px] text-muted-foreground">
+                            {si.batch_number ? `B: ${si.batch_number}` : ""}
+                            {si.batch_number && si.expiry_date ? " · " : ""}
+                            {si.expiry_date ? `Exp: ${new Date(si.expiry_date).toLocaleDateString("en-GB", { month: "2-digit", year: "2-digit" })}` : ""}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-2 text-right text-muted-foreground text-xs">{si.quantity}{si.sale_unit === "loose" ? " loose" : ""}</td>
                       <td className="py-2 text-right text-muted-foreground text-xs">₹{Number(si.unit_price).toFixed(2)}</td>
                       <td className="py-2 text-right font-medium text-foreground text-xs">₹{Number(si.total).toFixed(2)}</td>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Calendar, Download, FileText, Table2 } from "lucide-react";
 
 type Preset = "today" | "yesterday" | "this_week" | "this_month" | "this_year" | "all_time" | "custom";
@@ -102,10 +102,11 @@ export default function DateFilterExport({ onFilter, onExportExcel, onExportPDF,
     }
   };
 
-  // Initialize on mount
-  useMemo(() => {
+  // Initialize on mount (effect avoids render-phase setState in parent)
+  useEffect(() => {
     const { from, to } = getPresetRange(defaultPreset);
     onFilter(from, to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

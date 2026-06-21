@@ -225,21 +225,30 @@ export default function POS() {
     const pending = await getPendingSales();
     if (pending.length === 0) return;
     toast.info(`Syncing ${pending.length} offline bills...`);
+    let ok = 0, fail = 0;
     for (const sale of pending) {
       try {
         const { localId, cartItems, ...saleData } = sale;
         const { data: savedSale, error } = await supabase.from("sales").insert(saleData).select().single();
         if (error) throw error;
-        if (cartItems) {
+        if (cartItems && cartItems.length > 0) {
           const saleItems = cartItems.map((i: any) => ({ ...i, sale_id: savedSale.id }));
-          await supabase.from("sale_items").insert(saleItems);
+          const { error: itemsErr } = await supabase.from("sale_items").insert(saleItems);
+          if (itemsErr) {
+            // Roll back sale so a future retry doesn't create duplicates with the same invoice_number
+            await supabase.from("sales").delete().eq("id", savedSale.id);
+            throw itemsErr;
+          }
         }
         await clearPendingSale(localId);
+        ok++;
       } catch (e) {
         console.error("Sync failed for sale:", e);
+        fail++;
       }
     }
-    toast.success("Offline bills synced!");
+    if (fail === 0) toast.success(`Synced ${ok} offline bills`);
+    else toast.warning(`Synced ${ok}, ${fail} still pending (will retry)`);
   }, [tenantId]);
 
   useEffect(() => {
@@ -908,7 +917,15 @@ export default function POS() {
       if (error) throw error;
 
       const itemsWithSaleId = saleItemsData.map(i => ({ ...i, sale_id: sale.id }));
-      await supabase.from("sale_items").insert(itemsWithSaleId as any);
+      const { error: itemsErr } = await supabase.from("sale_items").insert(itemsWithSaleId as any);
+      if (itemsErr) {
+        // Critical: bill saved but items failed — roll back sale and queue offline so nothing is lost
+        console.error("sale_items insert failed:", itemsErr);
+        await supabase.from("sales").delete().eq("id", sale.id);
+        await savePendingSale({ ...saleData, cartItems: saleItemsData });
+        toast.error(`Bill items couldn't save (${itemsErr.message}). Queued for retry.`);
+        return;
+      }
 
       // ── FEFO Batch deduction from item_batches ─────────────────────────────
       for (const ci of savedCart) {
@@ -1005,7 +1022,9 @@ export default function POS() {
         return updated;
       });
     } catch (err: any) {
-      toast.error("Background save error: " + err.message);
+      // Network/RLS error: queue locally so the bill is never lost
+      try { await savePendingSale({ ...saleData, cartItems: saleItemsData }); } catch {}
+      toast.error("Save failed, queued offline: " + (err?.message || "unknown"));
     }
   };
 

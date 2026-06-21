@@ -59,7 +59,14 @@ export default function Purchases() {
 
   useEffect(() => { fetch_(); }, [tenantId, activeBranchId]);
 
-  const addPurchaseItem = () => setPurchaseItems(prev => [...prev, { item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip", batch_number: "", expiry_date: "", selling_price: 0, mrp: 0 }]);
+  const genBatchNo = (itemName?: string) => {
+    const d = new Date();
+    const yyyymmdd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const prefix = (itemName || "B").replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() || "B";
+    const rand = Math.random().toString(36).slice(2, 5).toUpperCase();
+    return `${prefix}-${yyyymmdd}-${rand}`;
+  };
+  const addPurchaseItem = () => setPurchaseItems(prev => [...prev, { item_id: "", item_name: "", quantity: 1, unit_price: 0, total: 0, purchase_unit: "strip", batch_number: genBatchNo(), expiry_date: "", selling_price: 0, mrp: 0 }]);
   const removePurchaseItem = (idx: number) => { if (purchaseItems.length <= 1) return; setPurchaseItems(prev => prev.filter((_, i) => i !== idx)); };
   const updatePurchaseItem = (idx: number, field: string, value: any) => {
     setPurchaseItems(prev => prev.map((pi, i) => {
@@ -73,6 +80,7 @@ export default function Purchases() {
           updated.selling_price = Number(item.price) || 0;  // pre-fill from item master
           updated.mrp = Number((item as any).mrp) || 0;
           updated.total = updated.quantity * updated.unit_price;
+          if (!updated.batch_number) updated.batch_number = genBatchNo(item.name);
         }
       }
       if (field === "quantity" || field === "unit_price") { updated.total = (field === "quantity" ? value : updated.quantity) * (field === "unit_price" ? value : updated.unit_price); }
