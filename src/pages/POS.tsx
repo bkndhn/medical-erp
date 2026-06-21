@@ -225,21 +225,30 @@ export default function POS() {
     const pending = await getPendingSales();
     if (pending.length === 0) return;
     toast.info(`Syncing ${pending.length} offline bills...`);
+    let ok = 0, fail = 0;
     for (const sale of pending) {
       try {
         const { localId, cartItems, ...saleData } = sale;
         const { data: savedSale, error } = await supabase.from("sales").insert(saleData).select().single();
         if (error) throw error;
-        if (cartItems) {
+        if (cartItems && cartItems.length > 0) {
           const saleItems = cartItems.map((i: any) => ({ ...i, sale_id: savedSale.id }));
-          await supabase.from("sale_items").insert(saleItems);
+          const { error: itemsErr } = await supabase.from("sale_items").insert(saleItems);
+          if (itemsErr) {
+            // Roll back sale so a future retry doesn't create duplicates with the same invoice_number
+            await supabase.from("sales").delete().eq("id", savedSale.id);
+            throw itemsErr;
+          }
         }
         await clearPendingSale(localId);
+        ok++;
       } catch (e) {
         console.error("Sync failed for sale:", e);
+        fail++;
       }
     }
-    toast.success("Offline bills synced!");
+    if (fail === 0) toast.success(`Synced ${ok} offline bills`);
+    else toast.warning(`Synced ${ok}, ${fail} still pending (will retry)`);
   }, [tenantId]);
 
   useEffect(() => {
