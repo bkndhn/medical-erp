@@ -1013,7 +1013,9 @@ export default function POS() {
         return updated;
       });
     } catch (err: any) {
-      toast.error("Background save error: " + err.message);
+      // Network/RLS error: queue locally so the bill is never lost
+      try { await savePendingSale({ ...saleData, cartItems: saleItemsData }); } catch {}
+      toast.error("Save failed, queued offline: " + (err?.message || "unknown"));
     }
   };
 
