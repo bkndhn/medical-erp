@@ -1139,7 +1139,9 @@ export type Database = {
       sale_items: {
         Row: {
           batch_id: string | null
+          batch_number: string | null
           discount: number | null
+          expiry_date: string | null
           id: string
           item_id: string | null
           item_name: string
@@ -1151,7 +1153,9 @@ export type Database = {
         }
         Insert: {
           batch_id?: string | null
+          batch_number?: string | null
           discount?: number | null
+          expiry_date?: string | null
           id?: string
           item_id?: string | null
           item_name: string
@@ -1163,7 +1167,9 @@ export type Database = {
         }
         Update: {
           batch_id?: string | null
+          batch_number?: string | null
           discount?: number | null
+          expiry_date?: string | null
           id?: string
           item_id?: string | null
           item_name?: string
