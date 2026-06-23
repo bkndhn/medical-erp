@@ -25,6 +25,26 @@ interface CartItem {
   isLoose?: boolean; loosePrice?: number;
   // FEFO batch info (auto-filled from item_batches)
   batchId?: string; batchNumber?: string; batchExpiry?: string; batchPrice?: number; batchPurchasePrice?: number;
+  expiryDiscountPercent?: number;  // applied auto-discount %, for receipt display
+}
+
+// Pull expiry-discount config from tenant_settings.settings JSON
+function readExpiryDiscountCfg(settings: any): { enabled: boolean; days: number; percent: number } {
+  const cfg = settings?.settings?.expiry_discount;
+  return {
+    enabled: !!cfg?.enabled,
+    days: Number(cfg?.days) > 0 ? Number(cfg.days) : 30,
+    percent: Number(cfg?.percent) > 0 ? Number(cfg.percent) : 0,
+  };
+}
+
+// Returns discounted unit price + applied %; returns originalPrice unchanged when no discount.
+function applyExpiryDiscount(unitPrice: number, expiry: string | undefined, cfg: ReturnType<typeof readExpiryDiscountCfg>):
+  { price: number; percent: number } {
+  if (!cfg.enabled || !cfg.percent || !expiry) return { price: unitPrice, percent: 0 };
+  const daysLeft = Math.ceil((new Date(expiry).getTime() - Date.now()) / 86400000);
+  if (daysLeft <= 0 || daysLeft > cfg.days) return { price: unitPrice, percent: 0 };
+  return { price: +(unitPrice * (1 - cfg.percent / 100)).toFixed(2), percent: cfg.percent };
 }
 
 interface PaymentLine { mode: string; amount: number; }
@@ -448,9 +468,16 @@ export default function POS() {
       } catch { /* fall back to item price silently */ }
     }
 
-    const unitPrice = batchPrice
+    const rawUnitPrice = batchPrice
       ? (loose && item.weight_per_unit && item.weight_per_unit > 0 ? batchPrice / item.weight_per_unit : batchPrice)
       : (loose && item.weight_per_unit && item.weight_per_unit > 0 ? Number(item.price) / item.weight_per_unit : Number(item.price));
+
+    // Auto expiry-discount
+    const expCfg = readExpiryDiscountCfg(tenantSettings);
+    const { price: unitPrice, percent: expiryDiscountPercent } = applyExpiryDiscount(rawUnitPrice, batchExpiry, expCfg);
+    if (expiryDiscountPercent > 0) {
+      toast.success(`🎯 ${expiryDiscountPercent}% expiry discount applied on ${item.name}`);
+    }
 
     setCart(prev => {
       const existing = prev.find(i => i.item.id === item.id && !!i.isLoose === loose && i.batchId === batchId);
@@ -464,16 +491,26 @@ export default function POS() {
       return [...prev, {
         item, quantity: 1, discount: 0, total: unitPrice,
         isLoose: loose, loosePrice: loose ? unitPrice : undefined,
-        batchId, batchNumber, batchExpiry, batchPrice, batchPurchasePrice,
+        batchId, batchNumber, batchExpiry,
+        batchPrice: batchPrice ? unitPrice : undefined,
+        batchPurchasePrice,
+        expiryDiscountPercent: expiryDiscountPercent || undefined,
       }];
     });
-  }, [cart, tenantId, isOnline, activeBranchId]);
+  }, [cart, tenantId, isOnline, activeBranchId, tenantSettings]);
 
   const selectSpecificBatch = (batch: any) => {
     if (!pendingItemForBatch) return;
     const { item, loose } = pendingItemForBatch;
-    const unitPrice = Number(batch.selling_price) || Number(item.price);
-    const finalPrice = loose && item.weight_per_unit && item.weight_per_unit > 0 ? unitPrice / item.weight_per_unit : unitPrice;
+    const rawUnitPrice = Number(batch.selling_price) || Number(item.price);
+    const rawFinalPrice = loose && item.weight_per_unit && item.weight_per_unit > 0 ? rawUnitPrice / item.weight_per_unit : rawUnitPrice;
+
+    // Auto expiry-discount
+    const expCfg = readExpiryDiscountCfg(tenantSettings);
+    const { price: finalPrice, percent: expiryDiscountPercent } = applyExpiryDiscount(rawFinalPrice, batch.expiry_date, expCfg);
+    if (expiryDiscountPercent > 0) {
+      toast.success(`🎯 ${expiryDiscountPercent}% expiry discount applied on ${item.name}`);
+    }
 
     setCart(prev => {
       const existing = prev.find(i => i.item.id === item.id && !!i.isLoose === loose && i.batchId === batch.id);
@@ -488,7 +525,8 @@ export default function POS() {
         item, quantity: 1, discount: 0, total: finalPrice,
         isLoose: loose, loosePrice: loose ? finalPrice : undefined,
         batchId: batch.id, batchNumber: batch.batch_number, batchExpiry: batch.expiry_date,
-        batchPrice: Number(batch.selling_price), batchPurchasePrice: Number(batch.purchase_price),
+        batchPrice: finalPrice, batchPurchasePrice: Number(batch.purchase_price),
+        expiryDiscountPercent: expiryDiscountPercent || undefined,
       }];
     });
     setShowBatchSelect(false);
