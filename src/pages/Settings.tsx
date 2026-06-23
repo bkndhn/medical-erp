@@ -215,11 +215,26 @@ export default function Settings() {
     const { error } = await supabase.from("tenant_settings").update({
       loyalty_enabled: tenantSettings.loyalty_enabled,
       points_per_rupee: tenantSettings.points_per_rupee,
-      rupees_per_point: tenantSettings.rupees_per_point
+      rupees_per_point: tenantSettings.rupees_per_point,
+      settings: tenantSettings.settings || {},
     }).eq("tenant_id", tenantId);
     if (error) toast.error(error.message);
-    else toast.success("Loyalty settings saved");
+    else toast.success("Settings saved");
     setSettingsSaving(false);
+  };
+
+  // Helpers for expiry-discount config stored in tenant_settings.settings JSON
+  const expCfg = (tenantSettings?.settings?.expiry_discount ?? { enabled: false, days: 30, percent: 10 }) as {
+    enabled: boolean; days: number; percent: number;
+  };
+  const setExpCfg = (next: Partial<typeof expCfg>) => {
+    setTenantSettings({
+      ...tenantSettings,
+      settings: {
+        ...(tenantSettings?.settings || {}),
+        expiry_discount: { ...expCfg, ...next },
+      },
+    });
   };
 
   const deletePm = async (id: string) => { if (!confirm("Delete?")) return; await supabase.from("payment_methods").delete().eq("id", id); toast.success("Deleted"); fetchPaymentMethods(); };
@@ -656,6 +671,39 @@ export default function Settings() {
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* ── Auto Expiry Discount ─────────────────────────────── */}
+            <div className="glass-card rounded-xl p-5 space-y-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">🎯 Auto Expiry Discount</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Automatically apply a discount on batches nearing expiry to clear stock faster and reduce write-offs.</p>
+                </div>
+                <button onClick={() => setExpCfg({ enabled: !expCfg.enabled })}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${expCfg.enabled ? "bg-success/10 text-success border border-success/30" : "bg-muted text-muted-foreground border border-border"}`}>
+                  {expCfg.enabled ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+
+              <div className={`space-y-3 transition-all ${expCfg.enabled ? "opacity-100" : "opacity-50 pointer-events-none"}`}>
+                <div className="p-4 rounded-xl border border-border bg-muted/20 flex flex-wrap items-center gap-3">
+                  <span className="text-sm text-muted-foreground">Apply</span>
+                  <input type="number" min={1} max={99} value={expCfg.percent}
+                    onChange={e => setExpCfg({ percent: Math.max(0, Math.min(99, parseInt(e.target.value) || 0)) })}
+                    className="w-20 px-3 py-1.5 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-center" />
+                  <span className="text-sm text-muted-foreground">% discount automatically when batch expires in</span>
+                  <input type="number" min={1} max={365} value={expCfg.days}
+                    onChange={e => setExpCfg({ days: Math.max(1, parseInt(e.target.value) || 1) })}
+                    className="w-20 px-3 py-1.5 rounded-lg bg-muted border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-center" />
+                  <span className="text-sm text-muted-foreground">days or less.</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground">💡 Discount is applied at POS the moment the near-expiry batch is selected. Customers see the reduced price on the receipt.</p>
+              </div>
+
+              <button onClick={saveTenantSettings} disabled={settingsSaving} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+                <Save className="h-4 w-4" /> {settingsSaving ? "Saving..." : "Save Expiry Settings"}
+              </button>
             </div>
           </div>
         )}

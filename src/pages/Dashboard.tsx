@@ -8,6 +8,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { toast } from "sonner";
 import DateFilterExport from "@/components/DateFilterExport";
+import LiveBranchPanel from "@/components/LiveBranchPanel";
 
 interface LowStockItem {
   id: string; name: string; stock: number; low_stock_threshold: number;
@@ -257,6 +258,9 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
+
+          {/* ── Live Multi-Branch Panel (renders only when 2+ branches & "All" view) ── */}
+          <LiveBranchPanel />
 
           {/* ── Sales Chart ────────────────────────────────────────────── */}
           {dailySalesData.length > 0 && (
