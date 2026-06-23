@@ -215,11 +215,26 @@ export default function Settings() {
     const { error } = await supabase.from("tenant_settings").update({
       loyalty_enabled: tenantSettings.loyalty_enabled,
       points_per_rupee: tenantSettings.points_per_rupee,
-      rupees_per_point: tenantSettings.rupees_per_point
+      rupees_per_point: tenantSettings.rupees_per_point,
+      settings: tenantSettings.settings || {},
     }).eq("tenant_id", tenantId);
     if (error) toast.error(error.message);
-    else toast.success("Loyalty settings saved");
+    else toast.success("Settings saved");
     setSettingsSaving(false);
+  };
+
+  // Helpers for expiry-discount config stored in tenant_settings.settings JSON
+  const expCfg = (tenantSettings?.settings?.expiry_discount ?? { enabled: false, days: 30, percent: 10 }) as {
+    enabled: boolean; days: number; percent: number;
+  };
+  const setExpCfg = (next: Partial<typeof expCfg>) => {
+    setTenantSettings({
+      ...tenantSettings,
+      settings: {
+        ...(tenantSettings?.settings || {}),
+        expiry_discount: { ...expCfg, ...next },
+      },
+    });
   };
 
   const deletePm = async (id: string) => { if (!confirm("Delete?")) return; await supabase.from("payment_methods").delete().eq("id", id); toast.success("Deleted"); fetchPaymentMethods(); };
