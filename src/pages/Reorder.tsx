@@ -186,20 +186,32 @@ export default function Reorder() {
                         <th className="text-left py-2 px-2">Item</th>
                         <th className="text-right py-2 px-2">Stock</th>
                         <th className="text-right py-2 px-2">Threshold</th>
+                        <th className="text-center py-2 px-2">AI Trend</th>
                         <th className="text-right py-2 px-2">Suggested Order</th>
                         <th className="text-right py-2 px-2">Cost</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {group.items.map(i => (
+                      {group.items.map(i => {
+                        const f = forecast[i.id];
+                        const TrendIcon = f?.trend === "rising" ? TrendingUp : f?.trend === "falling" ? TrendingDown : Minus;
+                        const trendCls = f?.trend === "rising" ? "text-success" : f?.trend === "falling" ? "text-destructive" : "text-muted-foreground";
+                        return (
                         <tr key={i.id} className="border-b border-border/30">
                           <td className="py-2 px-2">
                             <input type="checkbox" checked={selected[i.id]?.selected ?? true}
                               onChange={e => setSelected(s => ({ ...s, [i.id]: { ...s[i.id], selected: e.target.checked } }))} />
                           </td>
-                          <td className="py-2 px-2 font-medium">{i.name}<div className="text-xs text-muted-foreground">{i.sku}</div></td>
+                          <td className="py-2 px-2 font-medium">{i.name}<div className="text-xs text-muted-foreground">{i.sku}</div>{f?.note && <div className="text-[10px] text-primary mt-0.5">💡 {f.note}</div>}</td>
                           <td className="py-2 px-2 text-right text-destructive font-semibold">{i.stock}</td>
                           <td className="py-2 px-2 text-right text-muted-foreground">{i.low_stock_threshold ?? 0}</td>
+                          <td className="py-2 px-2 text-center">
+                            {f ? (
+                              <span className={`inline-flex items-center gap-1 text-xs ${trendCls}`} title={`${f.daily}/day (7d avg)`}>
+                                <TrendIcon className="h-3.5 w-3.5" />{f.daily}/d
+                              </span>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
                           <td className="py-2 px-2 text-right">
                             <input type="number" min={1} value={selected[i.id]?.qty || 0}
                               onChange={e => setSelected(s => ({ ...s, [i.id]: { ...s[i.id], qty: Number(e.target.value) } }))}
@@ -207,7 +219,7 @@ export default function Reorder() {
                           </td>
                           <td className="py-2 px-2 text-right text-muted-foreground">₹{Number(i.cost_price || 0).toFixed(2)}</td>
                         </tr>
-                      ))}
+                      );})}
                     </tbody>
                   </table>
                 </div>
