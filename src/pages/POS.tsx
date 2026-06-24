@@ -111,7 +111,7 @@ export default function POS() {
   const voiceRecogRef = useRef<any>(null);
   const voiceSupported = typeof window !== "undefined" && (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window));
 
-  const toggleVoice = useCallback(() => {
+  const toggleVoice = () => {
     if (!voiceSupported) { toast.error("Voice not supported in this browser"); return; }
     if (isListening) { voiceRecogRef.current?.stop(); return; }
     const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -120,7 +120,6 @@ export default function POS() {
     rec.onresult = (ev: any) => {
       const transcript = String(ev.results?.[0]?.[0]?.transcript || "").trim();
       if (!transcript) return;
-      // Try direct add by name; else populate search
       const q = transcript.toLowerCase();
       const match = items.find(i => i.name.toLowerCase() === q) ||
                     items.find(i => i.name.toLowerCase().includes(q));
@@ -132,7 +131,7 @@ export default function POS() {
     voiceRecogRef.current = rec;
     setIsListening(true);
     try { rec.start(); } catch { setIsListening(false); }
-  }, [isListening, voiceSupported]);
+  };
 
   const [paymentModes, setPaymentModes] = useState<PaymentMethodConfig[]>([]);
   const [defaultPaymentMode, setDefaultPaymentMode] = useState<string>("cash");
