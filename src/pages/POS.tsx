@@ -1406,7 +1406,14 @@ export default function POS() {
               <input ref={searchRef} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
                 placeholder="Search or scan... (F1)"
-                className="w-full pl-9 pr-10 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+                className="w-full pl-9 pr-20 py-2 rounded-lg bg-muted border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+              {voiceSupported && (
+                <button type="button" onClick={toggleVoice}
+                  title={isListening ? "Stop listening" : "Voice billing"}
+                  className={`absolute right-9 top-1/2 -translate-y-1/2 p-1 rounded transition-colors ${isListening ? "text-destructive animate-pulse" : "text-muted-foreground hover:text-primary"}`}>
+                  {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+              )}
               <ScanBarcode className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             </div>
           </div>
