@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, Truck, ShoppingCart, CheckCircle2, Loader2, Package } from "lucide-react";
+import { AlertTriangle, Truck, ShoppingCart, CheckCircle2, Loader2, Package, Sparkles, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
