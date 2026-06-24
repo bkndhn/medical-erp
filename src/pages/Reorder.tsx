@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertTriangle, Truck, ShoppingCart, CheckCircle2, Loader2, Package } from "lucide-react";
+import { AlertTriangle, Truck, ShoppingCart, CheckCircle2, Loader2, Package, Sparkles, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
@@ -22,6 +22,8 @@ export default function Reorder() {
   const [creating, setCreating] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, { qty: number; selected: boolean }>>({});
   const [defaultDays, setDefaultDays] = useState(15); // suggest stock for X days
+  const [forecasting, setForecasting] = useState(false);
+  const [forecast, setForecast] = useState<Record<string, { trend: string; daily: number; note: string | null }>>({});
 
   useEffect(() => {
     if (!tenantId) return;
@@ -61,6 +63,38 @@ export default function Reorder() {
     }));
   }, [items, suppliers]);
 
+  const runForecast = async () => {
+    if (!tenantId || items.length === 0) return;
+    setForecasting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("forecast-demand", {
+        body: {
+          tenant_id: tenantId,
+          branch_id: activeBranchId,
+          item_ids: items.map(i => i.id),
+          target_days: defaultDays,
+          use_ai: true,
+        },
+      });
+      if (error) throw error;
+      const map: typeof forecast = {};
+      const newSel = { ...selected };
+      for (const f of (data as any)?.forecasts || []) {
+        map[f.item_id] = { trend: f.trend, daily: f.daily_avg_7d, note: f.ai_note };
+        const it = items.find(i => i.id === f.item_id);
+        if (it) {
+          const qty = Math.max(1, f.recommended_qty - it.stock);
+          newSel[f.item_id] = { selected: true, qty };
+        }
+      }
+      setForecast(map);
+      setSelected(newSel);
+      toast.success("AI forecast applied");
+    } catch (e: any) {
+      toast.error("Forecast failed: " + e.message);
+    } finally { setForecasting(false); }
+  };
+
   const createPO = async (group: { supplier_id: string | null; items: Item[] }) => {
     if (!tenantId || !activeBranchId) { toast.error("Select a branch first"); return; }
     if (!group.supplier_id) { toast.error("Assign a supplier to these items first"); return; }
@@ -99,6 +133,17 @@ export default function Reorder() {
               <AlertTriangle className="h-5 sm:h-6 w-5 sm:w-6 text-warning" /> Low-Stock Reorder
             </h1>
             <p className="text-sm text-muted-foreground">{items.length} items below threshold</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground">Cover days</label>
+            <input type="number" min={1} max={90} value={defaultDays}
+              onChange={e => setDefaultDays(Math.max(1, Number(e.target.value) || 15))}
+              className="w-16 px-2 py-1 rounded bg-muted border border-border text-sm text-right" />
+            <button onClick={runForecast} disabled={forecasting || items.length === 0}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/30 text-sm font-medium hover:bg-primary/20 disabled:opacity-50">
+              {forecasting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              AI Forecast
+            </button>
           </div>
         </div>
       </header>
@@ -141,20 +186,32 @@ export default function Reorder() {
                         <th className="text-left py-2 px-2">Item</th>
                         <th className="text-right py-2 px-2">Stock</th>
                         <th className="text-right py-2 px-2">Threshold</th>
+                        <th className="text-center py-2 px-2">AI Trend</th>
                         <th className="text-right py-2 px-2">Suggested Order</th>
                         <th className="text-right py-2 px-2">Cost</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {group.items.map(i => (
+                      {group.items.map(i => {
+                        const f = forecast[i.id];
+                        const TrendIcon = f?.trend === "rising" ? TrendingUp : f?.trend === "falling" ? TrendingDown : Minus;
+                        const trendCls = f?.trend === "rising" ? "text-success" : f?.trend === "falling" ? "text-destructive" : "text-muted-foreground";
+                        return (
                         <tr key={i.id} className="border-b border-border/30">
                           <td className="py-2 px-2">
                             <input type="checkbox" checked={selected[i.id]?.selected ?? true}
                               onChange={e => setSelected(s => ({ ...s, [i.id]: { ...s[i.id], selected: e.target.checked } }))} />
                           </td>
-                          <td className="py-2 px-2 font-medium">{i.name}<div className="text-xs text-muted-foreground">{i.sku}</div></td>
+                          <td className="py-2 px-2 font-medium">{i.name}<div className="text-xs text-muted-foreground">{i.sku}</div>{f?.note && <div className="text-[10px] text-primary mt-0.5">💡 {f.note}</div>}</td>
                           <td className="py-2 px-2 text-right text-destructive font-semibold">{i.stock}</td>
                           <td className="py-2 px-2 text-right text-muted-foreground">{i.low_stock_threshold ?? 0}</td>
+                          <td className="py-2 px-2 text-center">
+                            {f ? (
+                              <span className={`inline-flex items-center gap-1 text-xs ${trendCls}`} title={`${f.daily}/day (7d avg)`}>
+                                <TrendIcon className="h-3.5 w-3.5" />{f.daily}/d
+                              </span>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
                           <td className="py-2 px-2 text-right">
                             <input type="number" min={1} value={selected[i.id]?.qty || 0}
                               onChange={e => setSelected(s => ({ ...s, [i.id]: { ...s[i.id], qty: Number(e.target.value) } }))}
@@ -162,7 +219,7 @@ export default function Reorder() {
                           </td>
                           <td className="py-2 px-2 text-right text-muted-foreground">₹{Number(i.cost_price || 0).toFixed(2)}</td>
                         </tr>
-                      ))}
+                      );})}
                     </tbody>
                   </table>
                 </div>
