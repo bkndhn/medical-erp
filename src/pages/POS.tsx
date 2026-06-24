@@ -107,6 +107,32 @@ export default function POS() {
   const searchRef = useRef<HTMLInputElement>(null);
   const barcodeBuffer = useRef("");
   const barcodeTimer = useRef<any>(null);
+  const [isListening, setIsListening] = useState(false);
+  const voiceRecogRef = useRef<any>(null);
+  const voiceSupported = typeof window !== "undefined" && (("SpeechRecognition" in window) || ("webkitSpeechRecognition" in window));
+
+  const toggleVoice = useCallback(() => {
+    if (!voiceSupported) { toast.error("Voice not supported in this browser"); return; }
+    if (isListening) { voiceRecogRef.current?.stop(); return; }
+    const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const rec = new SR();
+    rec.lang = "en-IN"; rec.interimResults = false; rec.maxAlternatives = 1; rec.continuous = false;
+    rec.onresult = (ev: any) => {
+      const transcript = String(ev.results?.[0]?.[0]?.transcript || "").trim();
+      if (!transcript) return;
+      // Try direct add by name; else populate search
+      const q = transcript.toLowerCase();
+      const match = items.find(i => i.name.toLowerCase() === q) ||
+                    items.find(i => i.name.toLowerCase().includes(q));
+      if (match) { addToCart(match); toast.success(`Voice: ${match.name}`); }
+      else { setSearchQuery(transcript); searchRef.current?.focus(); toast.message(`Heard: "${transcript}"`); }
+    };
+    rec.onerror = () => { setIsListening(false); };
+    rec.onend = () => { setIsListening(false); voiceRecogRef.current = null; };
+    voiceRecogRef.current = rec;
+    setIsListening(true);
+    try { rec.start(); } catch { setIsListening(false); }
+  }, [isListening, voiceSupported]);
 
   const [paymentModes, setPaymentModes] = useState<PaymentMethodConfig[]>([]);
   const [defaultPaymentMode, setDefaultPaymentMode] = useState<string>("cash");
