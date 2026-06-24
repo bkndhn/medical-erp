@@ -22,6 +22,8 @@ export default function Reorder() {
   const [creating, setCreating] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, { qty: number; selected: boolean }>>({});
   const [defaultDays, setDefaultDays] = useState(15); // suggest stock for X days
+  const [forecasting, setForecasting] = useState(false);
+  const [forecast, setForecast] = useState<Record<string, { trend: string; daily: number; note: string | null }>>({});
 
   useEffect(() => {
     if (!tenantId) return;
