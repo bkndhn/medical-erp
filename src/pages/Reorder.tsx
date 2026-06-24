@@ -134,6 +134,17 @@ export default function Reorder() {
             </h1>
             <p className="text-sm text-muted-foreground">{items.length} items below threshold</p>
           </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground">Cover days</label>
+            <input type="number" min={1} max={90} value={defaultDays}
+              onChange={e => setDefaultDays(Math.max(1, Number(e.target.value) || 15))}
+              className="w-16 px-2 py-1 rounded bg-muted border border-border text-sm text-right" />
+            <button onClick={runForecast} disabled={forecasting || items.length === 0}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/30 text-sm font-medium hover:bg-primary/20 disabled:opacity-50">
+              {forecasting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              AI Forecast
+            </button>
+          </div>
         </div>
       </header>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
