@@ -63,6 +63,38 @@ export default function Reorder() {
     }));
   }, [items, suppliers]);
 
+  const runForecast = async () => {
+    if (!tenantId || items.length === 0) return;
+    setForecasting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("forecast-demand", {
+        body: {
+          tenant_id: tenantId,
+          branch_id: activeBranchId,
+          item_ids: items.map(i => i.id),
+          target_days: defaultDays,
+          use_ai: true,
+        },
+      });
+      if (error) throw error;
+      const map: typeof forecast = {};
+      const newSel = { ...selected };
+      for (const f of (data as any)?.forecasts || []) {
+        map[f.item_id] = { trend: f.trend, daily: f.daily_avg_7d, note: f.ai_note };
+        const it = items.find(i => i.id === f.item_id);
+        if (it) {
+          const qty = Math.max(1, f.recommended_qty - it.stock);
+          newSel[f.item_id] = { selected: true, qty };
+        }
+      }
+      setForecast(map);
+      setSelected(newSel);
+      toast.success("AI forecast applied");
+    } catch (e: any) {
+      toast.error("Forecast failed: " + e.message);
+    } finally { setForecasting(false); }
+  };
+
   const createPO = async (group: { supplier_id: string | null; items: Item[] }) => {
     if (!tenantId || !activeBranchId) { toast.error("Select a branch first"); return; }
     if (!group.supplier_id) { toast.error("Assign a supplier to these items first"); return; }
